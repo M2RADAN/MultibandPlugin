@@ -1,191 +1,305 @@
-/*
-  ==============================================================================
+#include "PluginProcessor.h" // Включает MBRPAudioProcessor из PluginProcessor.h
+#include "PluginEditor.h"    // Включает MBRPAudioProcessorEditor из PluginEditor.h
+#include <cmath>          // Для M_PI, cos, sin, std::max
+#include <vector>         // Для возможного использования std::vector
 
-    This file contains the basic framework code for a JUCE plugin processor.
-
-  ==============================================================================
-*/
-
-#include "PluginProcessor.h"
-#include "PluginEditor.h"
+// Определяем M_PI, если не определен (для MSVC)
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 //==============================================================================
-MultibandPannerAudioProcessor::MultibandPannerAudioProcessor()
+MBRPAudioProcessor::MBRPAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       )
+    : AudioProcessor(BusesProperties()
+#if ! JucePlugin_IsMidiEffect
+#if ! JucePlugin_IsSynth
+        .withInput("Input", juce::AudioChannelSet::stereo(), true)
+#endif
+        .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+#endif
+    )
 #endif
 {
+    apvts = new juce::AudioProcessorValueTreeState(*this, nullptr, "Parameters",
+        {
+            // Параметр частоты среза НЧ/СЧ кроссовера
+            std::make_unique<juce::AudioParameterFloat>("lowMidCrossover",            // parameterID
+                                                        "Low-Mid Freq",               // parameter name
+                                                        juce::NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.25f), // range (log)
+                                                        500.0f,                       // default value
+                                                        juce::String(),               // parameter label (unit suffix)
+                                                        juce::AudioProcessorParameter::genericParameter, // category
+                                                        [](float v, int) { return juce::String(v, 0) + " Hz"; }, // value to text lambda
+                                                        nullptr),                     // text to value lambda
+
+                                                        // Параметр частоты среза СЧ/ВЧ кроссовера
+                                                        std::make_unique<juce::AudioParameterFloat>("midHighCrossover",           // parameterID
+                                                                                                    "Mid-High Freq",              // parameter name
+                                                                                                    juce::NormalisableRange<float>(500.0f, 20000.0f, 1.0f, 0.25f), // range (log)
+                                                                                                    2000.0f,                      // default value
+                                                                                                    juce::String(),               // parameter label (unit suffix)
+                                                                                                    juce::AudioProcessorParameter::genericParameter, // category
+                                                                                                    [](float v, int) { return (v < 1000.f) ? juce::String(v, 0) + " Hz" : juce::String(v / 1000.f, 1) + " kHz"; }, // value to text lambda
+                                                                                                    nullptr),                     // text to value lambda
+
+                                                                                                    // Параметр панорамы НЧ полосы
+                                                                                                    std::make_unique<juce::AudioParameterFloat>("lowPan",                     // parameterID
+                                                                                                                                                "Low Pan",                    // parameter name
+                                                                                                                                                -1.0f,                        // min value (Left)
+                                                                                                                                                1.0f,                         // max value (Right)
+                                                                                                                                                0.0f),                        // default value (Center)
+
+                                                                                                                                                // Параметр панорамы СЧ полосы
+                                                                                                                                                std::make_unique<juce::AudioParameterFloat>("midPan", "Mid Pan", -1.0f, 1.0f, 0.0f),
+
+                                                                                                                                                // Параметр панорамы ВЧ полосы
+                                                                                                                                                std::make_unique<juce::AudioParameterFloat>("highPan", "High Pan", -1.0f, 1.0f, 0.0f)
+        });
 }
 
-MultibandPannerAudioProcessor::~MultibandPannerAudioProcessor()
+MBRPAudioProcessor::~MBRPAudioProcessor()
 {
 }
 
 //==============================================================================
-const juce::String MultibandPannerAudioProcessor::getName() const
+const juce::String MBRPAudioProcessor::getName() const
 {
-    return JucePlugin_Name;
+    return JucePlugin_Name; // Имя из Projucer
 }
 
-bool MultibandPannerAudioProcessor::acceptsMidi() const
-{
-   #if JucePlugin_WantsMidiInput
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-bool MultibandPannerAudioProcessor::producesMidi() const
-{
-   #if JucePlugin_ProducesMidiOutput
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-bool MultibandPannerAudioProcessor::isMidiEffect() const
-{
-   #if JucePlugin_IsMidiEffect
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-double MultibandPannerAudioProcessor::getTailLengthSeconds() const
-{
-    return 0.0;
-}
-
-int MultibandPannerAudioProcessor::getNumPrograms()
-{
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
-}
-
-int MultibandPannerAudioProcessor::getCurrentProgram()
-{
-    return 0;
-}
-
-void MultibandPannerAudioProcessor::setCurrentProgram (int index)
-{
-}
-
-const juce::String MultibandPannerAudioProcessor::getProgramName (int index)
-{
-    return {};
-}
-
-void MultibandPannerAudioProcessor::changeProgramName (int index, const juce::String& newName)
-{
-}
+bool MBRPAudioProcessor::acceptsMidi() const { return false; }
+bool MBRPAudioProcessor::producesMidi() const { return false; }
+bool MBRPAudioProcessor::isMidiEffect() const { return false; }
+double MBRPAudioProcessor::getTailLengthSeconds() const { return 0.0; }
+int MBRPAudioProcessor::getNumPrograms() { return 1; }
+int MBRPAudioProcessor::getCurrentProgram() { return 0; }
+void MBRPAudioProcessor::setCurrentProgram(int index) { juce::ignoreUnused(index); }
+const juce::String MBRPAudioProcessor::getProgramName(int index) { juce::ignoreUnused(index); return {}; }
+void MBRPAudioProcessor::changeProgramName(int index, const juce::String& newName) { juce::ignoreUnused(index, newName); }
 
 //==============================================================================
-void MultibandPannerAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playback
-    // initialisation that you need..
+    lastSampleRate = (float)sampleRate;
+
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = 1; // Фильтры обрабатывают по одному каналу
+
+    // Подготовка фильтров
+    leftLowMidLPF.prepare(spec); rightLowMidLPF.prepare(spec);
+    leftLowMidHPF.prepare(spec); rightLowMidHPF.prepare(spec);
+    leftMidHighLPF.prepare(spec); rightMidHighLPF.prepare(spec);
+    leftMidHighHPF.prepare(spec); rightMidHighHPF.prepare(spec);
+
+    // Сброс состояния фильтров
+    leftLowMidLPF.reset(); rightLowMidLPF.reset();
+    leftLowMidHPF.reset(); rightLowMidHPF.reset();
+    leftMidHighLPF.reset(); rightMidHighLPF.reset();
+    leftMidHighHPF.reset(); rightMidHighHPF.reset();
+
+    // Выделение памяти для буферов
+    int numOutputChannels = getTotalNumOutputChannels(); // Обычно 2 для стерео
+    intermediateBuffer1.setSize(numOutputChannels, samplesPerBlock, false, true, true); // Очищать при изменении размера
+    lowBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
+    midBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
+    highBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
+
+    updateParameters(); // Обновляем параметры при старте
 }
 
-void MultibandPannerAudioProcessor::releaseResources()
+void MBRPAudioProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+    // Освобождаем ресурсы, если нужно
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
-bool MultibandPannerAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool MBRPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-  #if JucePlugin_IsMidiEffect
-    juce::ignoreUnused (layouts);
-    return true;
-  #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    // Требуем стерео вход и стерео выход
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
-
-    // This checks if the input layout matches the output layout
-   #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
-   #endif
-
     return true;
-  #endif
 }
 #endif
 
-void MultibandPannerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void MBRPAudioProcessor::updateParameters()
+{
+    // Получаем текущие значения параметров
+    float lowMidFreq = apvts->getRawParameterValue("lowMidCrossover")->load();
+    float midHighFreq = apvts->getRawParameterValue("midHighCrossover")->load();
+    float lowPanParam = apvts->getRawParameterValue("lowPan")->load();
+    float midPanParam = apvts->getRawParameterValue("midPan")->load();
+    float highPanParam = apvts->getRawParameterValue("highPan")->load();
+
+    // Гарантируем, что частоты кроссовера не пересекаются некорректно
+    midHighFreq = std::max(midHighFreq, lowMidFreq + 1.0f); // midHigh должна быть выше lowMid
+
+    // Обновляем частоты фильтров
+    leftLowMidLPF.setCutoffFrequency(lowMidFreq); rightLowMidLPF.setCutoffFrequency(lowMidFreq);
+    leftLowMidHPF.setCutoffFrequency(lowMidFreq); rightLowMidHPF.setCutoffFrequency(lowMidFreq);
+    leftMidHighLPF.setCutoffFrequency(midHighFreq); rightMidHighLPF.setCutoffFrequency(midHighFreq);
+    leftMidHighHPF.setCutoffFrequency(midHighFreq); rightMidHighHPF.setCutoffFrequency(midHighFreq);
+
+    // Рассчитываем гейны панорамы (Constant Power Panning)
+    auto calculatePanGains = [](float panParam, std::atomic<float>& leftGain, std::atomic<float>& rightGain)
+        {
+            constexpr float piOverTwo = (float)M_PI * 0.5f;
+            float angle = (panParam * 0.5f + 0.5f) * piOverTwo; // Преобразуем -1..+1 в 0..pi/2
+            leftGain.store(std::cos(angle));  // Гейн левого = cos(angle)
+            rightGain.store(std::sin(angle)); // Гейн правого = sin(angle)
+        };
+
+    calculatePanGains(lowPanParam, leftLowGain, rightLowGain);
+    calculatePanGains(midPanParam, leftMidGain, rightMidGain);
+    calculatePanGains(highPanParam, leftHighGain, rightHighGain);
+}
+
+
+void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
+    auto numSamples = buffer.getNumSamples();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    // Проверяем, что у нас стерео (хотя isBusesLayoutSupported должна это гарантировать)
+    jassert(totalNumInputChannels == 2 && totalNumOutputChannels == 2);
+    if (totalNumInputChannels != 2 || totalNumOutputChannels != 2) return; // Выходим, если не стерео
 
-    // This is the place where you'd normally do the guts of your plugin's
-    // audio processing...
-    // Make sure to reset the state if your inner loop is processing
-    // the samples and the outer loop is handling the channels.
-    // Alternatively, you can process the samples with the channels
-    // interleaved by keeping the same state.
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    // Обновление параметров (можно оптимизировать, чтобы делать реже)
+    updateParameters();
+
+    // --- Разделение на полосы с корректной обработкой каналов ---
+
+    // 1. Создаем блоки для каналов основного буфера
+    auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
+    auto leftInputBlock = inputBlock.getSingleChannelBlock(0);
+    auto rightInputBlock = inputBlock.getSingleChannelBlock(1);
+
+    // 2. Подготавливаем блоки для временных буферов
+    auto lowBandBlock = juce::dsp::AudioBlock<float>(lowBandBuffer);
+    auto midBandBlock = juce::dsp::AudioBlock<float>(midBandBuffer);
+    auto highBandBlock = juce::dsp::AudioBlock<float>(highBandBuffer);
+    auto inter1Block = juce::dsp::AudioBlock<float>(intermediateBuffer1);
+
+    auto leftLowBlock = lowBandBlock.getSingleChannelBlock(0);
+    auto rightLowBlock = lowBandBlock.getSingleChannelBlock(1);
+    auto leftMidBlock = midBandBlock.getSingleChannelBlock(0);
+    auto rightMidBlock = midBandBlock.getSingleChannelBlock(1);
+    auto leftHighBlock = highBandBlock.getSingleChannelBlock(0);
+    auto rightHighBlock = highBandBlock.getSingleChannelBlock(1);
+    auto leftInter1Block = inter1Block.getSingleChannelBlock(0);
+    auto rightInter1Block = inter1Block.getSingleChannelBlock(1);
+
+    // 3. Копируем входной сигнал в начальные точки каскадов
+    leftLowBlock.copyFrom(leftInputBlock);     // Копия для НЧ
+    rightLowBlock.copyFrom(rightInputBlock);
+    leftInter1Block.copyFrom(leftInputBlock);  // Копия для (СЧ+ВЧ)
+    rightInter1Block.copyFrom(rightInputBlock);
+
+    // 4. Первый каскад фильтрации (НЧ и СЧ+ВЧ)
+    juce::dsp::ProcessContextReplacing<float> leftLowContext(leftLowBlock);
+    juce::dsp::ProcessContextReplacing<float> rightLowContext(rightLowBlock);
+    juce::dsp::ProcessContextReplacing<float> leftInter1Context(leftInter1Block);
+    juce::dsp::ProcessContextReplacing<float> rightInter1Context(rightInter1Block);
+
+    leftLowMidLPF.process(leftLowContext);   // -> leftLowBlock (НЧ Левый)
+    rightLowMidLPF.process(rightLowContext);  // -> rightLowBlock (НЧ Правый)
+    leftLowMidHPF.process(leftInter1Context); // -> leftInter1Block (СЧ+ВЧ Левый)
+    rightLowMidHPF.process(rightInter1Context);// -> rightInter1Block (СЧ+ВЧ Правый)
+
+    // 5. Второй каскад фильтрации (СЧ и ВЧ из intermediateBuffer1)
+    // Копируем результат (СЧ+ВЧ) в начало второго каскада
+    leftMidBlock.copyFrom(leftInter1Block);
+    rightMidBlock.copyFrom(rightInter1Block);
+    leftHighBlock.copyFrom(leftInter1Block);
+    rightHighBlock.copyFrom(rightInter1Block);
+
+    // Создаем контексты для второго каскада
+    juce::dsp::ProcessContextReplacing<float> leftMidContext(leftMidBlock);
+    juce::dsp::ProcessContextReplacing<float> rightMidContext(rightMidBlock);
+    juce::dsp::ProcessContextReplacing<float> leftHighContext(leftHighBlock);
+    juce::dsp::ProcessContextReplacing<float> rightHighContext(rightHighBlock);
+
+    // Применяем фильтры второго каскада
+    leftMidHighLPF.process(leftMidContext);   // -> leftMidBlock (СЧ Левый)
+    rightMidHighLPF.process(rightMidContext);  // -> rightMidBlock (СЧ Правый)
+    leftMidHighHPF.process(leftHighContext);  // -> leftHighBlock (ВЧ Левый)
+    rightMidHighHPF.process(rightHighContext); // -> rightHighBlock (ВЧ Правый)
+
+    // --- Применение панорамы и суммирование ---
+    buffer.clear(); // Очищаем оригинальный буфер для записи результата
+
+    auto* leftOut = buffer.getWritePointer(0);
+    auto* rightOut = buffer.getWritePointer(1);
+    // Указатели на чтение из отфильтрованных полос
+    const auto* leftLowIn = lowBandBuffer.getReadPointer(0);
+    const auto* rightLowIn = lowBandBuffer.getReadPointer(1);
+    const auto* leftMidIn = midBandBuffer.getReadPointer(0);
+    const auto* rightMidIn = midBandBuffer.getReadPointer(1);
+    const auto* leftHighIn = highBandBuffer.getReadPointer(0);
+    const auto* rightHighIn = highBandBuffer.getReadPointer(1);
+
+    // Загружаем атомарные гейны один раз на блок
+    float llg = leftLowGain.load(); float rlg = rightLowGain.load();
+    float lmg = leftMidGain.load(); float rmg = rightMidGain.load();
+    float lhg = leftHighGain.load(); float rhg = rightHighGain.load();
+
+    for (int sample = 0; sample < numSamples; ++sample)
     {
-        auto* channelData = buffer.getWritePointer (channel);
+        // Панорамирование каждой полосы
+        float lowL = leftLowIn[sample] * llg;
+        float lowR = rightLowIn[sample] * rlg;
+        float midL = leftMidIn[sample] * lmg;
+        float midR = rightMidIn[sample] * rmg;
+        float highL = leftHighIn[sample] * lhg;
+        float highR = rightHighIn[sample] * rhg;
 
-        // ..do something to the data...
+        // Суммирование полос в выходные каналы
+        leftOut[sample] = lowL + midL + highL;
+        rightOut[sample] = lowR + midR + highR;
     }
 }
 
 //==============================================================================
-bool MultibandPannerAudioProcessor::hasEditor() const
+bool MBRPAudioProcessor::hasEditor() const
 {
-    return true; // (change this to false if you choose to not supply an editor)
+    return true; // Да, редактор есть
 }
 
-juce::AudioProcessorEditor* MultibandPannerAudioProcessor::createEditor()
+juce::AudioProcessorEditor* MBRPAudioProcessor::createEditor()
 {
-    return new MultibandPannerAudioProcessorEditor (*this);
-}
-
-//==============================================================================
-void MultibandPannerAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
-{
-    // You should use this method to store your parameters in the memory block.
-    // You could do that either as raw data, or use the XML or ValueTree classes
-    // as intermediaries to make it easy to save and load complex data.
-}
-
-void MultibandPannerAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
-{
-    // You should use this method to restore your parameters from this memory block,
-    // whose contents will have been created by the getStateInformation() call.
+    // Создаем и возвращаем экземпляр нашего редактора
+    return new MBRPAudioProcessorEditor(*this);
 }
 
 //==============================================================================
-// This creates new instances of the plugin..
+void MBRPAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
+{
+    // Сохраняем состояние APVTS
+    juce::MemoryOutputStream mos(destData, false);
+    apvts->state.writeToStream(mos);
+}
+
+void MBRPAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
+{
+    // Загружаем состояние APVTS
+    auto tree = juce::ValueTree::readFromData(data, size_t(sizeInBytes));
+    if (tree.isValid())
+    {
+        apvts->replaceState(tree);
+        updateParameters(); // Обновляем параметры плагина после загрузки состояния
+    }
+}
+
+//==============================================================================
+// Фабричная функция, вызываемая хостом для создания экземпляра плагина
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new MultibandPannerAudioProcessor();
+    return new MBRPAudioProcessor();
 }

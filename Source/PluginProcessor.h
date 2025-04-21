@@ -1,15 +1,19 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include <juce_dsp/juce_dsp.h> // Убедимся, что dsp модуль включен
+#include <juce_dsp/juce_dsp.h>
+#include <atomic> // Для std::atomic
 
 //==============================================================================
-class MultibandPannerAudioProcessor : public juce::AudioProcessor
+/**
+    Класс аудио процессора для MBRP (Multiband Panner)
+*/
+class MBRPAudioProcessor : public juce::AudioProcessor
 {
 public:
     //==============================================================================
-    MultibandPannerAudioProcessor();
-    ~MultibandPannerAudioProcessor() override;
+    MBRPAudioProcessor();
+    ~MBRPAudioProcessor() override;
 
     //==============================================================================
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -51,19 +55,19 @@ private:
     //==============================================================================
     juce::ScopedPointer<juce::AudioProcessorValueTreeState> apvts;
 
-    // --- Фильтры Linkwitz-Riley для кроссовера ---
-    // Нужны пары LP/HP для каждой частоты среза и для каждого канала
+    // --- Фильтры Linkwitz-Riley 2-го порядка (12 дБ/окт) ---
     using Filter = juce::dsp::LinkwitzRileyFilter<float>;
-    // Полоса НЧ (Low Pass < LowMid Xover)
-    Filter leftLowLPF, rightLowLPF;
-    // Полоса СЧ (High Pass > LowMid Xover, Low Pass < MidHigh Xover)
-    Filter leftMidHPF, rightMidHPF; // Фильтры для нижней границы СЧ
-    Filter leftMidLPF, rightMidLPF; // Фильтры для верхней границы СЧ
-    // Полоса ВЧ (High Pass > MidHigh Xover)
-    Filter leftHighHPF, rightHighHPF;
 
-    // --- Параметры и гейны панорамы ---
-    // Храним рассчитанные гейны, чтобы не вычислять тригонометрию каждый семпл
+    // Фильтры для разделения НЧ / (СЧ+ВЧ)
+    Filter leftLowMidLPF, rightLowMidLPF; // Low Pass < lowMidXover
+    Filter leftLowMidHPF, rightLowMidHPF; // High Pass > lowMidXover
+
+    // Фильтры для разделения СЧ / ВЧ (применяются к выходу HPF выше)
+    Filter leftMidHighLPF, rightMidHighLPF; // Low Pass < midHighXover
+    Filter leftMidHighHPF, rightMidHighHPF; // High Pass > midHighXover
+
+
+    // --- Параметры панорамы (атомарные для потокобезопасности) ---
     std::atomic<float> leftLowGain{ 1.f };
     std::atomic<float> rightLowGain{ 1.f };
     std::atomic<float> leftMidGain{ 1.f };
@@ -71,17 +75,17 @@ private:
     std::atomic<float> leftHighGain{ 1.f };
     std::atomic<float> rightHighGain{ 1.f };
 
-    // --- Временные буферы для полос ---
-    // Потребуются для хранения разделенных сигналов перед панорамированием
-    juce::AudioBuffer<float> lowBandBuffer;
-    juce::AudioBuffer<float> midBandBuffer;
-    juce::AudioBuffer<float> highBandBuffer;
-    // (Альтернатива - более сложная обработка на лету без доп. буферов)
+    // --- Временные буферы для обработки ---
+    juce::AudioBuffer<float> intermediateBuffer1; // Для (СЧ+ВЧ) после первого каскада
+    juce::AudioBuffer<float> lowBandBuffer;       // Для финальной НЧ полосы
+    juce::AudioBuffer<float> midBandBuffer;       // Для финальной СЧ полосы
+    juce::AudioBuffer<float> highBandBuffer;      // Для финальной ВЧ полосы
 
-    float lastSampleRate = 44100.0f; // Для инициализации и prepareToPlay
+
+    float lastSampleRate = 44100.0f; // Храним sample rate
 
     // --- Функции обновления ---
     void updateParameters(); // Обновляет фильтры и гейны панорамы
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MultibandPannerAudioProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessor)
 };

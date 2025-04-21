@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="VIqBol" name="MultibandPanner" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
-  <MAINGROUP id="UIw0zL" name="MultibandPanner">
+<JUCERPROJECT id="VIqBol" name="MBRP" projectType="audioplug" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="GoldNGrid">
+  <MAINGROUP id="UIw0zL" name="MBRP">
     <GROUP id="{240ADC6D-992C-2E44-53A0-FA4D2498D38F}" name="Source">
       <FILE id="qZFM41" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>
