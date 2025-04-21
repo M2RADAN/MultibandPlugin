@@ -159,7 +159,6 @@ void MBRPAudioProcessor::updateParameters()
     calculatePanGains(highPanParam, leftHighGain, rightHighGain);
 }
 
-
 void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -170,7 +169,7 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     jassert(totalNumInputChannels == 2 && totalNumOutputChannels == 2);
     if (totalNumInputChannels != 2 || totalNumOutputChannels != 2) return;
 
-    updateParameters(); // Обновляем параметры
+    updateParameters();
 
     // --- Подготовка блоков и контекстов ---
     auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
@@ -180,6 +179,8 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     auto lowBandBlock = juce::dsp::AudioBlock<float>(lowBandBuffer);
     auto midBandBlock = juce::dsp::AudioBlock<float>(midBandBuffer);
     auto highBandBlock = juce::dsp::AudioBlock<float>(highBandBuffer);
+    // Нам все еще нужен буфер для (СЧ+ВЧ)
+    auto intermediateBlock = juce::dsp::AudioBlock<float>(intermediateBuffer1);
 
     auto leftLowBlock = lowBandBlock.getSingleChannelBlock(0);
     auto rightLowBlock = lowBandBlock.getSingleChannelBlock(1);
@@ -187,44 +188,47 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     auto rightMidBlock = midBandBlock.getSingleChannelBlock(1);
     auto leftHighBlock = highBandBlock.getSingleChannelBlock(0);
     auto rightHighBlock = highBandBlock.getSingleChannelBlock(1);
+    auto leftInterBlock = intermediateBlock.getSingleChannelBlock(0);
+    auto rightInterBlock = intermediateBlock.getSingleChannelBlock(1);
 
-    // --- Фильтрация с последовательным применением ---
+    // --- Разделение на полосы по схеме ---
 
-    // 1. Получаем НЧ полосу
-    leftLowBlock.copyFrom(leftInputBlock);   // Копируем вход L
-    rightLowBlock.copyFrom(rightInputBlock);  // Копируем вход R
-    juce::dsp::ProcessContextReplacing<float> leftLowContext(leftLowBlock);
-    juce::dsp::ProcessContextReplacing<float> rightLowContext(rightLowBlock);
-    leftLowMidLPF.process(leftLowContext);   // Применяем LPF1 -> leftLowBlock теперь НЧ L
-    rightLowMidLPF.process(rightLowContext);  // Применяем LPF1 -> rightLowBlock теперь НЧ R
+    // 1. Получаем НЧ и (СЧ+ВЧ)
+    leftLowBlock.copyFrom(leftInputBlock);
+    rightLowBlock.copyFrom(rightInputBlock);
+    leftInterBlock.copyFrom(leftInputBlock);
+    rightInterBlock.copyFrom(rightInputBlock);
 
-    // 2. Получаем СЧ полосу (каскад HPF1 -> LPF2)
-    leftMidBlock.copyFrom(leftInputBlock);   // Копируем вход L
-    rightMidBlock.copyFrom(rightInputBlock);  // Копируем вход R
-    juce::dsp::ProcessContextReplacing<float> leftMidContext(leftMidBlock);
-    juce::dsp::ProcessContextReplacing<float> rightMidContext(rightMidBlock);
-    // Сначала HPF на частоте Low/Mid
-    leftLowMidHPF.process(leftMidContext);   // -> leftMidBlock теперь (СЧ+ВЧ) L
-    rightLowMidHPF.process(rightMidContext);  // -> rightMidBlock теперь (СЧ+ВЧ) R
-    // Затем LPF на частоте Mid/High (применяем к результату HPF)
-    leftMidHighLPF.process(leftMidContext);  // -> leftMidBlock теперь СЧ L
-    rightMidHighLPF.process(rightMidContext); // -> rightMidBlock теперь СЧ R
+    juce::dsp::ProcessContextReplacing<float> leftLowCtx(leftLowBlock);
+    juce::dsp::ProcessContextReplacing<float> rightLowCtx(rightLowBlock);
+    juce::dsp::ProcessContextReplacing<float> leftInterCtx(leftInterBlock);
+    juce::dsp::ProcessContextReplacing<float> rightInterCtx(rightInterBlock);
 
-    // 3. Получаем ВЧ полосу (каскад HPF1 -> HPF2)
-    leftHighBlock.copyFrom(leftInputBlock);  // Копируем вход L
-    rightHighBlock.copyFrom(rightInputBlock); // Копируем вход R
-    juce::dsp::ProcessContextReplacing<float> leftHighContext(leftHighBlock);
-    juce::dsp::ProcessContextReplacing<float> rightHighContext(rightHighBlock);
-    // Сначала HPF на частоте Low/Mid
-    leftLowMidHPF.process(leftHighContext);  // -> leftHighBlock теперь (СЧ+ВЧ) L
-    rightLowMidHPF.process(rightHighContext); // -> rightHighBlock теперь (СЧ+ВЧ) R
-    // Затем HPF на частоте Mid/High (применяем к результату первого HPF)
-    leftMidHighHPF.process(leftHighContext); // -> leftHighBlock теперь ВЧ L
-    rightMidHighHPF.process(rightHighContext);// -> rightHighBlock теперь ВЧ R
+    leftLowMidLPF.process(leftLowCtx);   // -> leftLowBlock = НЧ L
+    rightLowMidLPF.process(rightLowCtx);  // -> rightLowBlock = НЧ R
+    leftLowMidHPF.process(leftInterCtx);  // -> leftInterBlock = (СЧ+ВЧ) L
+    rightLowMidHPF.process(rightInterCtx); // -> rightInterBlock = (СЧ+ВЧ) R
 
+    // 2. Получаем СЧ и ВЧ из (СЧ+ВЧ)
+    // Копируем (СЧ+ВЧ) в начало для СЧ и ВЧ фильтрации
+    leftMidBlock.copyFrom(leftInterBlock);
+    rightMidBlock.copyFrom(rightInterBlock);
+    leftHighBlock.copyFrom(leftInterBlock);
+    rightHighBlock.copyFrom(rightInterBlock);
+
+    juce::dsp::ProcessContextReplacing<float> leftMidCtx(leftMidBlock);
+    juce::dsp::ProcessContextReplacing<float> rightMidCtx(rightMidBlock);
+    juce::dsp::ProcessContextReplacing<float> leftHighCtx(leftHighBlock);
+    juce::dsp::ProcessContextReplacing<float> rightHighCtx(rightHighBlock);
+
+    // Применяем ВТОРОЙ каскад фильтров
+    leftMidHighLPF.process(leftMidCtx);   // -> leftMidBlock = СЧ L (из СЧ+ВЧ)
+    rightMidHighLPF.process(rightMidCtx);  // -> rightMidBlock = СЧ R (из СЧ+ВЧ)
+    leftMidHighHPF.process(leftHighCtx);   // -> leftHighBlock = ВЧ L (из СЧ+ВЧ)
+    rightMidHighHPF.process(rightHighCtx);  // -> rightHighBlock = ВЧ R (из СЧ+ВЧ)
 
     // --- Применение панорамы и суммирование ---
-    buffer.clear(); // Очищаем выходной буфер
+    buffer.clear();
 
     auto* leftOut = buffer.getWritePointer(0);
     auto* rightOut = buffer.getWritePointer(1);
@@ -248,7 +252,7 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         float highL = leftHighIn[sample] * lhg;
         float highR = rightHighIn[sample] * rhg;
 
-        // Суммируем все три обработанные полосы
+        // Суммирование
         leftOut[sample] = lowL + midL + highL;
         rightOut[sample] = lowR + midR + highR;
     }
