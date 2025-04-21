@@ -56,6 +56,20 @@ MBRPAudioProcessor::MBRPAudioProcessor()
                                                                                                                                                 // Параметр панорамы ВЧ полосы
                                                                                                                                                 std::make_unique<juce::AudioParameterFloat>("highPan", "High Pan", -1.0f, 1.0f, 0.0f)
         });
+
+    // Устанавливаем типы фильтров
+    leftLPF1.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
+    rightLPF1.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
+    leftHPF1.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    rightHPF1.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+
+    leftLPF2.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
+    rightLPF2.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
+    leftHPF2.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    rightHPF2.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+
+    leftAPF2.setType(juce::dsp::LinkwitzRileyFilterType::allpass); // Важно! Тип Allpass
+    rightAPF2.setType(juce::dsp::LinkwitzRileyFilterType::allpass);
 }
 
 MBRPAudioProcessor::~MBRPAudioProcessor()
@@ -65,7 +79,7 @@ MBRPAudioProcessor::~MBRPAudioProcessor()
 //==============================================================================
 const juce::String MBRPAudioProcessor::getName() const
 {
-    return JucePlugin_Name; // Имя из Projucer
+    return JucePlugin_Name; // Убедись, что имя в Projucer = "MBRP"
 }
 
 bool MBRPAudioProcessor::acceptsMidi() const { return false; }
@@ -86,23 +100,26 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = samplesPerBlock;
-    spec.numChannels = 1; // Фильтры обрабатывают по одному каналу
+    spec.numChannels = 1; // Фильтры обрабатывают поканально
 
-    // Подготовка фильтров
-    leftLowMidLPF.prepare(spec); rightLowMidLPF.prepare(spec);
-    leftLowMidHPF.prepare(spec); rightLowMidHPF.prepare(spec);
-    leftMidHighLPF.prepare(spec); rightMidHighLPF.prepare(spec);
-    leftMidHighHPF.prepare(spec); rightMidHighHPF.prepare(spec);
+    // Подготовка всех фильтров
+    leftLPF1.prepare(spec); rightLPF1.prepare(spec);
+    leftHPF1.prepare(spec); rightHPF1.prepare(spec);
+    leftLPF2.prepare(spec); rightLPF2.prepare(spec);
+    leftHPF2.prepare(spec); rightHPF2.prepare(spec);
+    leftAPF2.prepare(spec); rightAPF2.prepare(spec); // Подготовка All-Pass
 
     // Сброс состояния фильтров
-    leftLowMidLPF.reset(); rightLowMidLPF.reset();
-    leftLowMidHPF.reset(); rightLowMidHPF.reset();
-    leftMidHighLPF.reset(); rightMidHighLPF.reset();
-    leftMidHighHPF.reset(); rightMidHighHPF.reset();
+    leftLPF1.reset(); rightLPF1.reset();
+    leftHPF1.reset(); rightHPF1.reset();
+    leftLPF2.reset(); rightLPF2.reset();
+    leftHPF2.reset(); rightHPF2.reset();
+    leftAPF2.reset(); rightAPF2.reset(); // Сброс All-Pass
 
     // Выделение памяти для буферов
     int numOutputChannels = getTotalNumOutputChannels(); // Обычно 2 для стерео
-    intermediateBuffer1.setSize(numOutputChannels, samplesPerBlock, false, true, true); // Очищать при изменении размера
+    // Устанавливаем флаги очистки буферов при изменении размера
+    hpf1OutputBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
     lowBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
     midBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
     highBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
@@ -112,7 +129,7 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
 void MBRPAudioProcessor::releaseResources()
 {
-    // Освобождаем ресурсы, если нужно
+    // Здесь можно освободить память, если она выделялась динамически
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -139,11 +156,12 @@ void MBRPAudioProcessor::updateParameters()
     // Гарантируем, что частоты кроссовера не пересекаются некорректно
     midHighFreq = std::max(midHighFreq, lowMidFreq + 1.0f); // midHigh должна быть выше lowMid
 
-    // Обновляем частоты фильтров
-    leftLowMidLPF.setCutoffFrequency(lowMidFreq); rightLowMidLPF.setCutoffFrequency(lowMidFreq);
-    leftLowMidHPF.setCutoffFrequency(lowMidFreq); rightLowMidHPF.setCutoffFrequency(lowMidFreq);
-    leftMidHighLPF.setCutoffFrequency(midHighFreq); rightMidHighLPF.setCutoffFrequency(midHighFreq);
-    leftMidHighHPF.setCutoffFrequency(midHighFreq); rightMidHighHPF.setCutoffFrequency(midHighFreq);
+    // Обновляем частоты среза фильтров
+    leftLPF1.setCutoffFrequency(lowMidFreq); rightLPF1.setCutoffFrequency(lowMidFreq);
+    leftHPF1.setCutoffFrequency(lowMidFreq); rightHPF1.setCutoffFrequency(lowMidFreq);
+    leftLPF2.setCutoffFrequency(midHighFreq); rightLPF2.setCutoffFrequency(midHighFreq);
+    leftHPF2.setCutoffFrequency(midHighFreq); rightHPF2.setCutoffFrequency(midHighFreq);
+    leftAPF2.setCutoffFrequency(midHighFreq); rightAPF2.setCutoffFrequency(midHighFreq); // All-Pass на частоте 2-го среза
 
     // Рассчитываем гейны панорамы (Constant Power Panning)
     auto calculatePanGains = [](float panParam, std::atomic<float>& leftGain, std::atomic<float>& rightGain)
@@ -159,6 +177,7 @@ void MBRPAudioProcessor::updateParameters()
     calculatePanGains(highPanParam, leftHighGain, rightHighGain);
 }
 
+
 void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -169,69 +188,70 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     jassert(totalNumInputChannels == 2 && totalNumOutputChannels == 2);
     if (totalNumInputChannels != 2 || totalNumOutputChannels != 2) return;
 
-    updateParameters();
+    updateParameters(); // Обновление параметров (можно оптимизировать)
 
     // --- Подготовка блоков и контекстов ---
     auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
-    auto leftInputBlock = inputBlock.getSingleChannelBlock(0);
-    auto rightInputBlock = inputBlock.getSingleChannelBlock(1);
-
     auto lowBandBlock = juce::dsp::AudioBlock<float>(lowBandBuffer);
     auto midBandBlock = juce::dsp::AudioBlock<float>(midBandBuffer);
     auto highBandBlock = juce::dsp::AudioBlock<float>(highBandBuffer);
-    // Нам все еще нужен буфер для (СЧ+ВЧ)
-    auto intermediateBlock = juce::dsp::AudioBlock<float>(intermediateBuffer1);
+    auto hpf1OutputBlock = juce::dsp::AudioBlock<float>(hpf1OutputBuffer);
 
+    // Получаем блоки для каждого канала
+    auto leftInputBlock = inputBlock.getSingleChannelBlock(0);
+    auto rightInputBlock = inputBlock.getSingleChannelBlock(1);
     auto leftLowBlock = lowBandBlock.getSingleChannelBlock(0);
     auto rightLowBlock = lowBandBlock.getSingleChannelBlock(1);
     auto leftMidBlock = midBandBlock.getSingleChannelBlock(0);
     auto rightMidBlock = midBandBlock.getSingleChannelBlock(1);
     auto leftHighBlock = highBandBlock.getSingleChannelBlock(0);
     auto rightHighBlock = highBandBlock.getSingleChannelBlock(1);
-    auto leftInterBlock = intermediateBlock.getSingleChannelBlock(0);
-    auto rightInterBlock = intermediateBlock.getSingleChannelBlock(1);
+    auto leftHpf1OutBlock = hpf1OutputBlock.getSingleChannelBlock(0);
+    auto rightHpf1OutBlock = hpf1OutputBlock.getSingleChannelBlock(1);
 
-    // --- Разделение на полосы по схеме ---
+    // --- Разделение на полосы (метод с фазовой компенсацией) ---
 
-    // 1. Получаем НЧ и (СЧ+ВЧ)
+    // 1. Инициализация буферов копированием входа
     leftLowBlock.copyFrom(leftInputBlock);
     rightLowBlock.copyFrom(rightInputBlock);
-    leftInterBlock.copyFrom(leftInputBlock);
-    rightInterBlock.copyFrom(rightInputBlock);
+    leftMidBlock.copyFrom(leftInputBlock);      // СЧ начнем с входа, потом применим HPF1
+    rightMidBlock.copyFrom(rightInputBlock);
+    // В ВЧ буфер копировать пока не надо, он будет скопирован из выхода HPF1
 
+    // 2. Обработка НЧ полосы (LPF1 -> APF2)
     juce::dsp::ProcessContextReplacing<float> leftLowCtx(leftLowBlock);
     juce::dsp::ProcessContextReplacing<float> rightLowCtx(rightLowBlock);
-    juce::dsp::ProcessContextReplacing<float> leftInterCtx(leftInterBlock);
-    juce::dsp::ProcessContextReplacing<float> rightInterCtx(rightInterBlock);
+    leftLPF1.process(leftLowCtx);    // -> leftLowBlock = НЧ L (после LPF1)
+    rightLPF1.process(rightLowCtx);   // -> rightLowBlock = НЧ R (после LPF1)
+    leftAPF2.process(leftLowCtx);    // -> leftLowBlock = НЧ L (после LPF1 + APF2)
+    rightAPF2.process(rightLowCtx);   // -> rightLowBlock = НЧ R (после LPF1 + APF2)
 
-    leftLowMidLPF.process(leftLowCtx);   // -> leftLowBlock = НЧ L
-    rightLowMidLPF.process(rightLowCtx);  // -> rightLowBlock = НЧ R
-    leftLowMidHPF.process(leftInterCtx);  // -> leftInterBlock = (СЧ+ВЧ) L
-    rightLowMidHPF.process(rightInterCtx); // -> rightInterBlock = (СЧ+ВЧ) R
-
-    // 2. Получаем СЧ и ВЧ из (СЧ+ВЧ)
-    // Копируем (СЧ+ВЧ) в начало для СЧ и ВЧ фильтрации
-    leftMidBlock.copyFrom(leftInterBlock);
-    rightMidBlock.copyFrom(rightInterBlock);
-    leftHighBlock.copyFrom(leftInterBlock);
-    rightHighBlock.copyFrom(rightInterBlock);
-
+    // 3. Обработка СЧ полосы (HPF1 -> LPF2)
     juce::dsp::ProcessContextReplacing<float> leftMidCtx(leftMidBlock);
     juce::dsp::ProcessContextReplacing<float> rightMidCtx(rightMidBlock);
+    leftHPF1.process(leftMidCtx);    // -> leftMidBlock = (СЧ+ВЧ) L
+    rightHPF1.process(rightMidCtx);   // -> rightMidBlock = (СЧ+ВЧ) R
+    // Копируем результат HPF1 во временный буфер И в буфер ВЧ
+    leftHpf1OutBlock.copyFrom(leftMidBlock);
+    rightHpf1OutBlock.copyFrom(rightMidBlock);
+    leftHighBlock.copyFrom(leftHpf1OutBlock); // <--- Копируем сюда для ВЧ
+    rightHighBlock.copyFrom(rightHpf1OutBlock);
+    // Применяем LPF2 к (СЧ+ВЧ) в буфере СЧ
+    leftLPF2.process(leftMidCtx);    // -> leftMidBlock = СЧ L
+    rightLPF2.process(rightMidCtx);   // -> rightMidBlock = СЧ R
+
+    // 4. Обработка ВЧ полосы (используем скопированный результат HPF1 и применяем HPF2)
     juce::dsp::ProcessContextReplacing<float> leftHighCtx(leftHighBlock);
     juce::dsp::ProcessContextReplacing<float> rightHighCtx(rightHighBlock);
-
-    // Применяем ВТОРОЙ каскад фильтров
-    leftMidHighLPF.process(leftMidCtx);   // -> leftMidBlock = СЧ L (из СЧ+ВЧ)
-    rightMidHighLPF.process(rightMidCtx);  // -> rightMidBlock = СЧ R (из СЧ+ВЧ)
-    leftMidHighHPF.process(leftHighCtx);   // -> leftHighBlock = ВЧ L (из СЧ+ВЧ)
-    rightMidHighHPF.process(rightHighCtx);  // -> rightHighBlock = ВЧ R (из СЧ+ВЧ)
+    leftHPF2.process(leftHighCtx);   // -> leftHighBlock = ВЧ L
+    rightHPF2.process(rightHighCtx);  // -> rightHighBlock = ВЧ R
 
     // --- Применение панорамы и суммирование ---
-    buffer.clear();
+    buffer.clear(); // Очищаем оригинальный буфер для записи результата
 
     auto* leftOut = buffer.getWritePointer(0);
     auto* rightOut = buffer.getWritePointer(1);
+    // Читаем из финальных буферов полос
     const auto* leftLowIn = lowBandBuffer.getReadPointer(0);
     const auto* rightLowIn = lowBandBuffer.getReadPointer(1);
     const auto* leftMidIn = midBandBuffer.getReadPointer(0);
@@ -239,12 +259,14 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const auto* leftHighIn = highBandBuffer.getReadPointer(0);
     const auto* rightHighIn = highBandBuffer.getReadPointer(1);
 
+    // Загружаем атомарные гейны
     float llg = leftLowGain.load(); float rlg = rightLowGain.load();
     float lmg = leftMidGain.load(); float rmg = rightMidGain.load();
     float lhg = leftHighGain.load(); float rhg = rightHighGain.load();
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
+        // Панорамирование
         float lowL = leftLowIn[sample] * llg;
         float lowR = rightLowIn[sample] * rlg;
         float midL = leftMidIn[sample] * lmg;

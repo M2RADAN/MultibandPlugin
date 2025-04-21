@@ -55,16 +55,17 @@ private:
     //==============================================================================
     juce::ScopedPointer<juce::AudioProcessorValueTreeState> apvts;
 
-    // --- Фильтры Linkwitz-Riley 2-го порядка (12 дБ/окт) ---
+    // --- Фильтры (Имена для ясности, как в компрессоре) ---
     using Filter = juce::dsp::LinkwitzRileyFilter<float>;
 
-    // Фильтры для разделения НЧ / (СЧ+ВЧ)
-    Filter leftLowMidLPF, rightLowMidLPF; // Low Pass < lowMidXover
-    Filter leftLowMidHPF, rightLowMidHPF; // High Pass > lowMidXover
+    // Каскад 1 (Частота Low/Mid Crossover)
+    Filter leftLPF1, rightLPF1;  // Low Pass для НЧ
+    Filter leftHPF1, rightHPF1;  // High Pass для (СЧ+ВЧ)
 
-    // Фильтры для разделения СЧ / ВЧ (применяются к выходу HPF выше)
-    Filter leftMidHighLPF, rightMidHighLPF; // Low Pass < midHighXover
-    Filter leftMidHighHPF, rightMidHighHPF; // High Pass > midHighXover
+    // Каскад 2 (Частота Mid/High Crossover)
+    Filter leftLPF2, rightLPF2;  // Low Pass для СЧ (применяется к выходу HPF1)
+    Filter leftHPF2, rightHPF2;  // High Pass для ВЧ (применяется к выходу HPF1)
+    Filter leftAPF2, rightAPF2;  // All Pass для НЧ (компенсация фазы 2-го каскада)
 
 
     // --- Параметры панорамы (атомарные для потокобезопасности) ---
@@ -75,11 +76,11 @@ private:
     std::atomic<float> leftHighGain{ 1.f };
     std::atomic<float> rightHighGain{ 1.f };
 
-    // --- Временные буферы для обработки ---
-    juce::AudioBuffer<float> intermediateBuffer1; // Для (СЧ+ВЧ) после первого каскада
+    // --- Буферы для обработки полос ---
     juce::AudioBuffer<float> lowBandBuffer;       // Для финальной НЧ полосы
     juce::AudioBuffer<float> midBandBuffer;       // Для финальной СЧ полосы
     juce::AudioBuffer<float> highBandBuffer;      // Для финальной ВЧ полосы
+    juce::AudioBuffer<float> hpf1OutputBuffer;    // Временный для хранения выхода HPF1
 
 
     float lastSampleRate = 44100.0f; // Храним sample rate
