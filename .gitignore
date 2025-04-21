@@ -1,0 +1,49 @@
+# JUCE / Projucer generated build folders
+Builds/
+JuceLibraryCode/
+
+# Visual Studio / MSBuild specific
+*.sln.dotsettings.user
+*.vcxproj.filters
+*.vcxproj.user
+*.VC.db
+*.VC.opendb
+*.suo
+*.user
+.vs/
+*.[Oo]bj/
+*.pdb
+*.ilk
+*.aps
+*.ncb
+*.pch
+*_i.c
+*_p.c
+*_h.h
+*.res
+*.sdf
+ipch/
+obj/
+bin/
+debug/
+release/
+x64/
+Win32/
+ARM64/
+ARM/
+AppX/
+
+# macOS specific
+.DS_Store
+._*
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.perspectivev3
+xcuserdata/
+
+# Other common temporary files
+*~
+*.bak
+*.tmp
+Thumbs.db
