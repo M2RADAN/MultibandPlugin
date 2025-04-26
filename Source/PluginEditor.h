@@ -1,50 +1,71 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "PluginProcessor.h" // Включает объявление MBRPAudioProcessor
+#include "PluginProcessor.h" // Включает MBRPAudioProcessor
+
+// --- ВКЛЮЧАЕМ КОМПОНЕНТЫ GUI ---
+// Убедись, что пути и пространства имен верны, и файлы скопированы
+#include "GUI/LookAndFeel.h"
+#include "GUI/SpectrumAnalyzer.h"
+#include "GUI/CustomButtons.h"
+#include "GUI/BandSelectControls.h"
+#include "GUI/RotarySliderWithLabels.h"
+// -------------------------------
+
+// --- ControlBar ---
+struct ControlBar : juce::Component
+{
+    ControlBar();
+    void resized() override;
+    AnalyzerButton analyzerButton; // Глобальное пространство имен
+};
+// ----------------
 
 //==============================================================================
-/**
-    Класс редактора для плагина MBRP
-*/
-class MBRPAudioProcessorEditor : public juce::AudioProcessorEditor
+class MBRPAudioProcessorEditor : public juce::AudioProcessorEditor,
+    public juce::Timer
 {
 public:
-    // Конструктор принимает ссылку на процессор MBRPAudioProcessor
     explicit MBRPAudioProcessorEditor(MBRPAudioProcessor&);
     ~MBRPAudioProcessorEditor() override;
 
-    //==============================================================================
     void paint(juce::Graphics&) override;
     void resized() override;
+    void timerCallback() override;
 
 private:
-    // Ссылка на наш аудио процессор
+    LookAndFeel lnf; // Глобальное пространство имен
     MBRPAudioProcessor& processorRef;
 
-    // Элементы управления UI
-    juce::Slider lowMidCrossoverSlider;
-    juce::Slider midHighCrossoverSlider;
-    juce::Slider lowPanSlider;
-    juce::Slider midPanSlider;
-    juce::Slider highPanSlider;
+    // --- Компоненты GUI ---
+    ControlBar controlBar;
+    MBRP_GUI::SpectrumAnalyzer analyzer;
+    MBRP_GUI::AnalyzerOverlay analyzerOverlay;
+    MBRP_GUI::BandSelectControls bandSelectControls;
+    // ----------------------
 
-    // Метки для элементов управления
-    juce::Label lowMidCrossoverLabel;
-    juce::Label midHighCrossoverLabel;
-    juce::Label lowPanLabel;
-    juce::Label midPanLabel;
-    juce::Label highPanLabel;
+    // Контролы панорамы/кроссовера
+    juce::Slider lowMidCrossoverSlider, midHighCrossoverSlider;
+    juce::Label lowMidCrossoverLabel, midHighCrossoverLabel;
 
-    // Attachments для автоматической связи UI с параметрами процессора
+    // --- ИЗМЕНЕНО: Только один набор контролов панорамы ---
+    RotarySliderWithLabels panSlider;
+    juce::Label panLabel;
+    // ---------------------------------------------------
+
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
 
-    SliderAttachment lowMidCrossoverAttachment;
-    SliderAttachment midHighCrossoverAttachment;
-    SliderAttachment lowPanAttachment;
-    SliderAttachment midPanAttachment;
-    SliderAttachment highPanAttachment;
+    // Аттачменты для кроссоверов (остаются)
+    SliderAttachment lowMidCrossoverAttachment, midHighCrossoverAttachment;
+
+    // --- ИЗМЕНЕНО: Только один аттачмент для панорамы (будет пересоздаваться) ---
+    std::unique_ptr<SliderAttachment> panAttachment; // Используем unique_ptr для легкого пересоздания
+    // ----------------------------------------------------------------------
+
+    // --- ДОБАВЛЕНО: Функция для обновления аттачмента панорамы ---
+    void updatePanAttachment(int bandIndex);
+    // ---------------------------------------------------------
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessorEditor)
 };
