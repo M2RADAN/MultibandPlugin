@@ -4,6 +4,41 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="GoldNGrid">
   <MAINGROUP id="UIw0zL" name="MBRP">
     <GROUP id="{240ADC6D-992C-2E44-53A0-FA4D2498D38F}" name="Source">
+      <GROUP id="{198F1968-0428-D974-1B5C-24E121232D67}" name="DSP">
+        <FILE id="kw4fGo" name="CompressorBand.cpp" compile="1" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/DSP/CompressorBand.cpp"/>
+        <FILE id="dAbICb" name="CompressorBand.h" compile="0" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/DSP/CompressorBand.h"/>
+        <FILE id="CdhClP" name="Fifo.h" compile="0" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/DSP/Fifo.h"/>
+        <FILE id="NViQom" name="Params.cpp" compile="1" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/DSP/Params.cpp"/>
+        <FILE id="LLY24E" name="Params.h" compile="0" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/DSP/Params.h"/>
+        <FILE id="Jw0oNs" name="SingleChannelSampleFifo.h" compile="0" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/DSP/SingleChannelSampleFifo.h"/>
+      </GROUP>
+      <GROUP id="{767AD63F-E215-A89A-7398-9A70B7D92893}" name="GUI">
+        <FILE id="RCKXbP" name="AnalyzerPathGenerator.h" compile="0" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/AnalyzerPathGenerator.h"/>
+        <FILE id="r4kEeC" name="CompressorBandControls.cpp" compile="1" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/CompressorBandControls.cpp"/>
+        <FILE id="VV2daH" name="CompressorBandControls.h" compile="0" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/CompressorBandControls.h"/>
+        <FILE id="KWQBUV" name="CustomButtons.cpp" compile="1" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/CustomButtons.cpp"/>
+        <FILE id="SIbXpI" name="CustomButtons.h" compile="0" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/CustomButtons.h"/>
+        <FILE id="rmgZgj" name="FFTDataGenerator.h" compile="0" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/FFTDataGenerator.h"/>
+        <FILE id="qmZ3Tg" name="LookAndFeel.cpp" compile="1" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/LookAndFeel.cpp"/>
+        <FILE id="Hu8qjL" name="LookAndFeel.h" compile="0" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/LookAndFeel.h"/>
+        <FILE id="uT6g28" name="PathProducer.cpp" compile="1" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/PathProducer.cpp"/>
+        <FILE id="Mwc4i1" name="PathProducer.h" compile="0" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/PathProducer.h"/>
+        <FILE id="xPQlpp" name="SpectrumAnalyzer.cpp" compile="1" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/SpectrumAnalyzer.cpp"/>
+        <FILE id="LqgaC0" name="SpectrumAnalyzer.h" compile="0" resource="0"
+              file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/SpectrumAnalyzer.h"/>
+        <FILE id="YpTPeo" name="Utilities.cpp" compile="1" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/Utilities.cpp"/>
+        <FILE id="jbE8vu" name="Utilities.h" compile="0" resource="0" file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/Utilities.h"/>
+      </GROUP>
       <FILE id="qZFM41" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>
       <FILE id="ffUnQ0" name="PluginProcessor.h" compile="0" resource="0"
