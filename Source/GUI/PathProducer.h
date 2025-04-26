@@ -1,100 +1,134 @@
-/*
-  ==============================================================================
-
-    PathProducer.h
-    Created: 30 Oct 2021 11:44:41am
-    Author:  matkatmusic
-
-  ==============================================================================
-*/
-
 #pragma once
 
 #include <JuceHeader.h>
-
 #include "FFTDataGenerator.h"
 #include "AnalyzerPathGenerator.h"
-#include "../PluginProcessor.h"
+#include "../PluginProcessor.h" // Для доступа к SimpleFifo (убедись, что путь правильный)
 
 namespace MBRP_GUI
 {
-template<typename BlockType>
-struct PathProducer
-{
-    PathProducer(SingleChannelSampleFifo<BlockType>& scsf) :
-    singleChannelSampleFifo(&scsf)
+    // Класс, отвечающий за получение аудиоданных из FIFO,
+    // передачу их в FFTDataGenerator, получение результата FFT,
+    // передачу его в AnalyzerPathGenerator и хранение финального пути.
+    template<typename BlockType> // BlockType здесь juce::AudioBuffer<float>
+    struct PathProducer
     {
-        fftDataGenerator.changeOrder(FFTOrder::order2048);
-        monoBuffer.setSize(1, fftDataGenerator.getFFTSize());
-    }
-    void process(juce::Rectangle<float> fftBounds, double sampleRate)
-    {
-        juce::AudioBuffer<float> tempIncomingBuffer;
-        while( singleChannelSampleFifo->getNumCompleteBuffersAvailable() > 0 )
+        PathProducer(MBRPAudioProcessor::SimpleFifo& scsf) : // Принимает ссылку на НАШ SimpleFifo
+            singleChannelSampleFifo(&scsf)
         {
-            if( singleChannelSampleFifo->getAudioBuffer(tempIncomingBuffer) )
+            // Инициализация генератора FFT с порядком 2048
+            fftDataGenerator.changeOrder(FFTOrder::order2048);
+            // Инициализация моно-буфера нужного размера
+            monoBuffer.setSize(1, fftDataGenerator.getFFTSize());
+        }
+
+        void process(juce::Rectangle<float> fftBounds, double sampleRate)
+        {
+            juce::AudioBuffer<float> tempIncomingBuffer;
+            int buffersProcessedCount = 0; // Счетчик для отладки
+
+            // Обрабатываем все доступные буферы из FIFO
+            while (singleChannelSampleFifo != nullptr && singleChannelSampleFifo->getNumCompleteBuffersAvailable() > 0)
             {
-                auto size = tempIncomingBuffer.getNumSamples();
-                
-                jassert(size <= monoBuffer.getNumSamples());
-                size = juce::jmin(size, monoBuffer.getNumSamples());
-                
-                auto writePointer = monoBuffer.getWritePointer(0, 0);
-                auto readPointer = monoBuffer.getReadPointer(0, size);
-                
-                std::copy(readPointer,
-                          readPointer + (monoBuffer.getNumSamples() - size),
-                          writePointer);
+                if (singleChannelSampleFifo->getAudioBuffer(tempIncomingBuffer))
+                {
+                    buffersProcessedCount++;
+                    float fifoPeak = tempIncomingBuffer.getMagnitude(0, tempIncomingBuffer.getNumSamples());
+                    DBG("PATH PRODUCER (FIFO->Mono): Pulled buffer #" << buffersProcessedCount << ", Peak = " << juce::Decibels::gainToDecibels(fifoPeak) << " dB");
 
-    //            juce::FloatVectorOperations::copy(monoBuffer.getWritePointer(0, 0),
-    //                                              monoBuffer.getReadPointer(0, size),
-    //                                              monoBuffer.getNumSamples() - size);
+                    // --- Копирование в моно-буфер (упрощенный вариант) ---
+                    // Убедимся, что размеры совпадают или буфер из FIFO меньше
+                    auto inputNumSamples = tempIncomingBuffer.getNumSamples();
+                    auto monoNumSamples = monoBuffer.getNumSamples();
 
-                juce::FloatVectorOperations::copy(monoBuffer.getWritePointer(0, monoBuffer.getNumSamples() - size),
-                                                  tempIncomingBuffer.getReadPointer(0, 0),
-                                                  size);
-                
-                fftDataGenerator.produceFFTDataForRendering(monoBuffer, negativeInfinity);
+                    if (inputNumSamples <= monoNumSamples) {
+                        monoBuffer.clear(); // Очищаем моно буфер
+                        // Копируем из канала 0 временного буфера
+                        monoBuffer.copyFrom(0, 0, tempIncomingBuffer, 0, 0, inputNumSamples);
+
+                        // Отладка пика моно-буфера
+                        float monoPeak = monoBuffer.getMagnitude(0, monoNumSamples);
+                        DBG("PATH PRODUCER (Mono->FFT): Calling produceFFT..., Mono Peak = " << juce::Decibels::gainToDecibels(monoPeak) << " dB");
+
+                        // Передаем моно-буфер в FFT генератор
+                        fftDataGenerator.produceFFTDataForRendering(monoBuffer, negativeInfinity);
+                    }
+                    else {
+                        DBG("PathProducer::process Warning: Incoming buffer size (" << inputNumSamples
+                            << ") > mono buffer size (" << monoNumSamples << "). Skipping FFT frame.");
+                        // jassertfalse; // Можно раскомментировать для остановки отладчика
+                    }
+                    // --- Конец копирования ---
+                }
+                else
+                {
+                    DBG("PathProducer::process Error: Failed to pull buffer from FIFO!");
+                }
+            }
+            // if (buffersProcessedCount == 0) { DBG("PATH PRODUCER (FIFO->Mono): No buffers pulled from FIFO this cycle."); }
+
+            // Обрабатываем все доступные результаты FFT
+            int fftBlocksProcessedCount = 0;
+            const auto fftSize = fftDataGenerator.getFFTSize();
+            const auto binWidth = sampleRate / double(fftSize);
+
+            while (fftDataGenerator.getNumAvailableFFTDataBlocks() > 0)
+            {
+                std::vector<float> fftData;
+                if (fftDataGenerator.getFFTData(fftData))
+                {
+                    fftBlocksProcessedCount++;
+                    float maxDb = NEG_INFINITY; // Используем константу
+                    if (!fftData.empty()) {
+                        maxDb = *std::max_element(fftData.begin(), fftData.end());
+                    }
+                    DBG("PATH PRODUCER (FFT->PathGen): Pulled FFT Data #" << fftBlocksProcessedCount << ", Max dB = " << maxDb);
+
+                    // Передаем данные FFT в генератор пути
+                    pathProducer.generatePath(fftData, fftBounds, fftSize, static_cast<float>(binWidth), negativeInfinity);
+                }
+                else
+                {
+                    DBG("PathProducer::process Error: Failed to pull FFT data from FFTDataGenerator!");
+                }
+            }
+            // if (fftBlocksProcessedCount == 0 && buffersProcessedCount > 0) { DBG("PATH PRODUCER (FFT->PathGen): No FFT data generated or pulled."); }
+
+            // Получаем сгенерированные пути
+            while (pathProducer.getNumPathsAvailable() > 0)
+            {
+                if (pathProducer.getPath(fftPath)) {
+                    // Успешно получили путь - можно раскомментировать для детальной отладки
+                     // auto pathBounds = fftPath.getBounds();
+                     // DBG("PATH PRODUCER (PathGen->Final): Path pulled, bounds=" << pathBounds.toString() << ", empty=" << fftPath.isEmpty());
+                }
+                else {
+                    DBG("PATH PRODUCER (PathGen->Final): Failed to pull path from PathGenerator!");
+                }
             }
         }
-        
-        const auto fftSize = fftDataGenerator.getFFTSize();
-        const auto binWidth = sampleRate / double(fftSize);
 
-        while( fftDataGenerator.getNumAvailableFFTDataBlocks() > 0 )
-        {
-            std::vector<float> fftData;
-            if( fftDataGenerator.getFFTData( fftData) )
-            {
-                pathProducer.generatePath(fftData,
-                                          fftBounds,
-                                          fftSize,
-                                          static_cast<float>(binWidth),
-                                          negativeInfinity);
-            }
-        }
-        
-        while( pathProducer.getNumPathsAvailable() > 0 )
-        {
-            pathProducer.getPath( fftPath );
-        }
-    }
-    
-    juce::Path getPath() { return fftPath; }
-    
-    void updateNegativeInfinity(float nf) { negativeInfinity = nf; }
-private:
-    SingleChannelSampleFifo<BlockType>* singleChannelSampleFifo;
-    
-    BlockType monoBuffer;
-    
-    FFTDataGenerator<std::vector<float>> fftDataGenerator;
-    
-    AnalyzerPathGenerator<juce::Path> pathProducer;
-    
-    juce::Path fftPath;
-    
-    float negativeInfinity { -48.f };
-};
+        // Метод для получения последнего сгенерированного пути
+        juce::Path getPath() { return fftPath; }
 
-} //end namespace MBRP_GUI
+        // Метод для обновления нижнего предела dB (используется в resized редактора)
+        void updateNegativeInfinity(float nf) { negativeInfinity = nf; }
+
+    private:
+        // Указатель на FIFO (передается в конструкторе)
+        MBRPAudioProcessor::SimpleFifo* singleChannelSampleFifo;
+
+        BlockType monoBuffer; // Моно-буфер для FFT
+
+        // Генератор данных FFT
+        FFTDataGenerator<std::vector<float>> fftDataGenerator;
+
+        // Генератор пути из данных FFT
+        AnalyzerPathGenerator<juce::Path> pathProducer;
+
+        juce::Path fftPath; // Хранилище для последнего сгенерированного пути
+
+        float negativeInfinity{ NEG_INFINITY }; // Используем константу по умолчанию
+    };
+
+} // Конец namespace MBRP_GUI

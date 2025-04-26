@@ -1,6 +1,7 @@
 #include "SpectrumAnalyzer.h"
-#include "Utilities.h"  // Включаем для mapX, mapY, констант и SpectrumAnalyzerUtils
-#include "LookAndFeel.h"// Включаем для ColorScheme
+#include "Utilities.h"
+#include "LookAndFeel.h"
+
 namespace MBRP_GUI
 {
     // --- Реализация SpectrumAnalyzer ---
@@ -12,18 +13,15 @@ namespace MBRP_GUI
         leftPathProducer(leftFifo), // Инициализируем PathProducers
         rightPathProducer(rightFifo)
     {
-        // Устанавливаем нижний предел dB для генераторов путей
         leftPathProducer.updateNegativeInfinity(NEG_INFINITY);
         rightPathProducer.updateNegativeInfinity(NEG_INFINITY);
-        startTimerHz(60); // Запускаем таймер обновления (например, 60 раз в секунду)
+        startTimerHz(60);
     }
 
     void SpectrumAnalyzer::timerCallback()
     {
-        if (shouldShowFFTAnalysis)
-        {
+        if (shouldShowFFTAnalysis) {
             auto bounds = getLocalBounds();
-            // ИСПРАВЛЕНО: Убрали MBRP_GUI::, так как Utils объявлен в этом же .h
             auto fftBounds = SpectrumAnalyzerUtils::getAnalysisArea(bounds).toFloat();
             sampleRate = audioProcessor.getSampleRate();
             leftPathProducer.process(fftBounds, sampleRate);
@@ -35,16 +33,11 @@ namespace MBRP_GUI
     void SpectrumAnalyzer::paint(juce::Graphics& g)
     {
         using namespace juce;
-        g.fillAll(Colours::black); // Заливаем фон черным
-        auto bounds = getLocalBounds(); // Получаем границы компонента
-
-        // Рисуем сетку и текстовые метки
+        g.fillAll(Colours::black);
+        auto bounds = getLocalBounds();
         drawBackgroundGrid(g, bounds);
         drawTextLabels(g, bounds);
-
-        // Рисуем спектр, если анализ включен
-        if (shouldShowFFTAnalysis)
-        {
+        if (shouldShowFFTAnalysis) {
             drawFFTAnalysis(g, bounds);
         }
     }
@@ -53,9 +46,7 @@ namespace MBRP_GUI
     {
         using namespace juce;
         auto bounds = getLocalBounds();
-        // ИСПРАВЛЕНО: Убрали MBRP_GUI::
         auto fftBounds = SpectrumAnalyzerUtils::getAnalysisArea(bounds).toFloat();
-        // Используем mapY, которая должна быть в Utilities.h (и включена здесь)
         auto negInf = mapY(NEG_INFINITY, fftBounds.getBottom(), fftBounds.getY());
         leftPathProducer.updateNegativeInfinity(negInf);
         rightPathProducer.updateNegativeInfinity(negInf);
@@ -64,27 +55,25 @@ namespace MBRP_GUI
     void SpectrumAnalyzer::drawFFTAnalysis(juce::Graphics& g, juce::Rectangle<int> bounds)
     {
         using namespace juce;
-        // Получаем актуальную область рисования спектра
         auto analysisArea = SpectrumAnalyzerUtils::getAnalysisArea(bounds);
         Graphics::ScopedSaveState state(g); // Сохраняем состояние графики
         g.reduceClipRegion(analysisArea); // Ограничиваем рисование этой областью
 
-        // Получаем путь для левого канала от PathProducer
         auto leftPath = leftPathProducer.getPath();
-        // Сдвигаем путь в правильную позицию внутри analysisArea
+        auto rightPath = rightPathProducer.getPath();
+        // --- ОТЛАДКА ПОЛУЧЕНИЯ ПУТИ ---
+        DBG("DRAW FFT: Left Path is empty = " << (leftPath.isEmpty() ? "Yes" : "No")
+            << ", Right Path is empty = " << (rightPath.isEmpty() ? "Yes" : "No"));
+        // -------------------------------
+
         leftPath.applyTransform(AffineTransform().translation(analysisArea.getX(), 0));
-        // Устанавливаем цвет (из LookAndFeel/ColorScheme)
         g.setColour(ColorScheme::getInputSignalColor());
-        // Рисуем путь
         g.strokePath(leftPath, PathStrokeType(1.f));
 
-        // То же самое для правого канала
-        auto rightPath = rightPathProducer.getPath();
         rightPath.applyTransform(AffineTransform().translation(analysisArea.getX(), 0));
         g.setColour(ColorScheme::getOutputSignalColor());
         g.strokePath(rightPath, PathStrokeType(1.f));
     }
-
 
     // --- Реализация вспомогательных функций рисования ---
 
@@ -233,7 +222,6 @@ namespace MBRP_GUI
             }
         }
     }
-
 
     // --- Реализация AnalyzerOverlay ---
     AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowXover,

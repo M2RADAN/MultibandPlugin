@@ -155,6 +155,7 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 
     // Первичное обновление параметров
     updateParameters();
+    DBG("Processor Prepared. Sample Rate: " << sampleRate << ", Block Size: " << samplesPerBlock); // Отладка prepareToPlay
 }
 
 void MBRPAudioProcessor::releaseResources()
@@ -220,10 +221,18 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     updateParameters();
 
     // --- Отправка данных в FIFO для анализатора (до обработки) ---
+
+    float inputPeakL = buffer.getMagnitude(0, 0, numSamples); // Пик левого канала
+    float inputPeakR = buffer.getMagnitude(1, 0, numSamples); // Пик правого канала
+    // ------------------------------------------------------------
+    static int debugCounter = 0;
+    if (++debugCounter > 80) {
+        DBG("PROCESS BLOCK: Input Peak L=" << juce::Decibels::gainToDecibels(inputPeakL)
+            << " dB, R=" << juce::Decibels::gainToDecibels(inputPeakR) << " dB");
+        debugCounter = 0;
+    }
     leftChannelFifo.update(buffer);
     rightChannelFifo.update(buffer);
-    // ------------------------------------------------------------
-
     // --- Подготовка блоков и контекстов для DSP ---
     auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
     auto leftInputBlock = inputBlock.getSingleChannelBlock(0);
