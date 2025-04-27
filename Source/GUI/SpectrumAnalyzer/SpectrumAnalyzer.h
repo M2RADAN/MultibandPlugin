@@ -1,55 +1,109 @@
-// SpectrumAnalyzer.h
 #pragma once
 
 #include <JuceHeader.h>
-#include "../Source/PluginProcessor.h"
+#include "../Source/PluginProcessor.h" // Путь к вашему процессору
 
-//==============================================================================
-class SpectrumAnalyzer : public juce::Component,
-    private juce::Timer
+namespace MBRP_GUI
 {
-public:
-    SpectrumAnalyzer(MBRPAudioProcessor& p);
-    ~SpectrumAnalyzer() override;
 
-    void paint(juce::Graphics&) override;
-    void resized() override;
+    class SpectrumAnalyzer final : public juce::Component, juce::Timer
+    {
+    public:
+        explicit SpectrumAnalyzer(MBRPAudioProcessor& p);
+        ~SpectrumAnalyzer() override = default;
 
-    void timerCallback() override;
+        void paint(juce::Graphics&) override;
+        void resized() override;
+        void timerCallback() override;
 
-private:
-    MBRPAudioProcessor& audioProcessor;
+    private:
+        MBRPAudioProcessor& processor;
 
-    std::vector<float> displayData;  // Р”Р°РЅРЅС‹Рµ РґР»СЏ РѕС‚РѕР±СЂР°Р¶РµРЅРёСЏ (С‚РµРїРµСЂСЊ СЃ EMA)
-    std::atomic<float> peakDbLevel{ -100.0f };
+        // --- Данные для отображения ---
+        std::vector<float> displayData;      // Данные для основной кривой (с EMA)
+        std::vector<float> peakHoldLevels;   // Данные для линии пиков (с decay)
+        std::atomic<float> peakDbLevel{ mindB }; // Пик всего спектра (мгновенный)
 
-    void drawSpectrum(juce::Graphics& g, const juce::Rectangle<float>& bounds);
-    void drawFrequencyMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds);
-    void drawGrid(juce::Graphics& g, const juce::Rectangle<float>& bounds);
+        // --- Функции отрисовки (хелперы) ---
+        void drawFrequencyGrid(juce::Graphics& g, const juce::Rectangle<float>& bounds);
+        void drawGainScale(juce::Graphics& g, const juce::Rectangle<float>& bounds);
+        void drawSpectrumAndPeaks(juce::Graphics& g, const juce::Rectangle<float>& bounds);
+        void drawFrequencyMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds);
 
-    float frequencyToX(float freq, float width) const;
-    float xToFrequency(float x, float width) const;
+        // --- Вспомогательные функции ---
+        float frequencyToX(float freq, float width) const;
 
-    const float minFreq = 20.0f;
-    const float maxFreq = 20000.0f;
-    const float minDb = -100.0f;
-    const float maxDb = 30.0f;
+        // --- Константы ---
+        static constexpr float minFreq = 20.0f;
+        static constexpr float maxFreq = 20000.0f;
+        static constexpr float mindB = -100.0f;
+        static constexpr float maxdB = 30.0f;
 
-       // РљРѕСЌС„С„РёС†РёРµРЅС‚ Р·Р°С‚СѓС…Р°РЅРёСЏ Р±РѕР»СЊС€Рµ РЅРµ РЅСѓР¶РµРЅ РІ С‚Р°РєРѕРј РІРёРґРµ
-      // const float decayFactor = 0.98f;
+        // --- Коэффициенты ---
+        static constexpr float smoothingAlpha = 0.2f; // Коэффициент сглаживания EMA
+        static constexpr float peakHoldDecayFactor = 0.957f; // Затухание пиков
 
-            // --- Р”РћР‘РђР’Р›Р•РќРћ: РљРѕСЌС„С„РёС†РёРµРЅС‚С‹ РґР»СЏ EMA СЃРіР»Р°Р¶РёРІР°РЅРёСЏ ---
-    const float attackAlpha = 0.7f;  // РЎРєРѕСЂРѕСЃС‚СЊ РїРѕРґСЉРµРјР° (Р±РѕР»СЊС€Рµ = Р±С‹СЃС‚СЂРµРµ)
-    const float releaseAlpha = 0.6f; // РЎРєРѕСЂРѕСЃС‚СЊ СЃРїР°РґР° (РјРµРЅСЊС€Рµ = РјРµРґР»РµРЅРЅРµРµ/РїР»Р°РІРЅРµРµ)
-    // --- РР›Р РџР РћРЎРўРћР™ Р’РђР РРђРќРў РЎ РћР”РќРРњ РљРћР­Р¤Р¤РР¦РР•РќРўРћРњ ---
-    const float smoothingAlpha = 0.2f; // РљРѕСЌС„С„РёС†РёРµРЅС‚ СЃРіР»Р°Р¶РёРІР°РЅРёСЏ (РјРµРЅСЊС€Рµ = РїР»Р°РІРЅРµРµ)
-        // --------------------------------------------------
+        // --- Цвета ---
+        const juce::Colour backgroundColour{ juce::Colours::black };
+        const juce::Colour spectrumFillColour{ juce::Colours::lightblue.withAlpha(0.2f) };
+        const juce::Colour spectrumLineColour{ juce::Colours::lightblue };
+        const juce::Colour peakHoldLineColour{ juce::Colours::lightgoldenrodyellow.withAlpha(0.7f) };
+        // const juce::Colour overZeroDbFillColour   { juce::Colours::red.withAlpha(0.3f) }; // Пока не используется
+        const juce::Colour overZeroDbLineColour{ juce::Colours::red };
+        const juce::Colour zeroDbLineColour{ juce::Colours::white.withAlpha(0.5f) };
+        const juce::Colour gridLineColour{ juce::Colours::dimgrey.withAlpha(0.3f) };
+        const juce::Colour gridTextColour{ juce::Colours::lightgrey.withAlpha(0.7f) };
+        const juce::Colour peakTextColour{ juce::Colours::white };
 
-    const juce::Colour overZeroDbColour{ juce::Colours::red };
-    const juce::Colour spectrumLineColour{ juce::Colours::lightblue };
-    const juce::Colour zeroDbLineColour{ juce::Colours::white.withAlpha(0.7f) };
-    const juce::Colour gridLineColour{ juce::Colours::dimgrey.withAlpha(0.5f) };
-    const juce::Colour textColour{ juce::Colours::lightgrey };
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzer)
-};
+        // === ДОБАВЛЕНЫ НЕДОСТАЮЩИЕ ЧЛЕНЫ ИЗ witte/EqEditor ===
+        int resizeDebounceInFrames = 0; // Задержка пересчета после ресайза
+
+        // Объекты FFT (используем порядок из процессора)
+        juce::dsp::FFT fftInput{ MBRPAudioProcessor::fftOrder };
+        juce::dsp::FFT fftOutput{ MBRPAudioProcessor::fftOrder }; // Для выходного сигнала (если нужен)
+
+        // Окно Ханна (используем размер из процессора)
+        juce::dsp::WindowingFunction<float> hannWindow{ static_cast<size_t>(MBRPAudioProcessor::fftSize),
+            juce::dsp::WindowingFunction<float>::hann };
+
+        // Временные буферы для FFT
+        juce::AudioBuffer<float> fftBufferInput{ 1, MBRPAudioProcessor::fftSize * 2 };
+        juce::AudioBuffer<float> fftBufferOutput{ 1, MBRPAudioProcessor::fftSize * 2 }; // Для выходного
+
+        // Буферы для скользящего среднего (усреднение по 4 кадрам + 1 для суммы)
+        juce::AudioBuffer<float> avgInput{ 5, MBRPAudioProcessor::fftSize / 2 };
+        juce::AudioBuffer<float> avgOutput{ 5, MBRPAudioProcessor::fftSize / 2 }; // Для выходного
+        int avgInputPtr = 1; // Указатель на текущий слот усреднения (1..N-1)
+        int avgOutputPtr = 1; // Для выходного
+
+        // Блокировка для безопасного доступа к путям из разных потоков
+        juce::CriticalSection pathCreationLock;
+        // Пути убраны, т.к. формируются локально в paint/drawSpectrumAndPeaks
+
+        // Структура для связи бинов FFT с точками X на экране
+        struct fftPoint
+        {
+            int firstBinIndex = 0;
+            int lastBinIndex = 1;
+            int x = 0;
+        };
+        int fftPointsSize = 0; // Количество актуальных точек в fftPoints
+        std::vector<fftPoint> fftPoints; // Вектор точек экрана
+
+        // Объявление статической функции получения уровня для точки
+        static float getFftPointLevel(const float* averagedMagnitudes, const fftPoint& point);
+
+        // Объявление приватных методов
+        void recalculateFftPoints();
+        void drawNextFrame(); // Теперь это внутренний метод, вызываемый из timerCallback
+        // =========================================================
+
+
+        // Вспомогательная функция для текста
+        static float getTextLayoutWidth(const juce::String& text, const juce::Font& font);
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzer)
+    };
+
+} // namespace MBRP_GUI

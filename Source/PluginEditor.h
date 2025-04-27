@@ -1,52 +1,43 @@
-// PluginEditor.h
 #pragma once
 
 #include "PluginProcessor.h"
 #include <JuceHeader.h>
 
-// --- ВКЛЮЧАЕМ КОМПОНЕНТЫ GUI ---
+// Включаем компоненты GUI
 #include "GUI/BandSelectControls.h"
 #include "GUI/CustomButtons.h"
 #include "GUI/LookAndFeel.h"
 #include "GUI/RotarySliderWithLabels.h"
-#include "GUI/SpectrumAnalyzer/SpectrumAnalyzer.h" // Путь к НОВОМУ анализатору
-// ---------------------------------------
+// Путь к НОВОМУ анализатору
+#include "GUI/SpectrumAnalyzer/SpectrumAnalyzer.h"
 
-// --- ControlBar (остается) ---
+// ControlBar
 struct ControlBar : juce::Component
 {
     ControlBar();
     void resized() override;
     AnalyzerButton analyzerButton;
 };
-// ----------------
 
-// --- AnalyzerOverlay ---
+// AnalyzerOverlay
 namespace MBRP_GUI
 {
     struct AnalyzerOverlay : juce::Component, juce::Timer
     {
-        AnalyzerOverlay(juce::AudioParameterFloat& lowXover,
-            juce::AudioParameterFloat& midXover);
+        AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover);
         void paint(juce::Graphics& g) override;
         void timerCallback() override;
         void resized() override;
 
-    private: // <-- Убедитесь, что секция private существует
+    private:
         void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds);
         juce::AudioParameterFloat& lowMidXoverParam;
         juce::AudioParameterFloat& midHighXoverParam;
-
-        // --- ДОБАВЛЕНО: Объявление переменных состояния ---
-        float lastLowMidFreq;  // Хранит последнее значение для сравнения
-        float lastMidHighFreq; // Хранит последнее значение для сравнения
-        // -------------------------------------------------
-
+        float lastLowMidFreq;
+        float lastMidHighFreq;
         juce::Rectangle<int> getAnalysisArea(juce::Rectangle<int> bounds) const;
     };
-} // конец namespace MBRP_GUI
-// ---------------------------------
-
+} // namespace MBRP_GUI
 
 //==============================================================================
 class MBRPAudioProcessorEditor : public juce::AudioProcessorEditor,
@@ -64,27 +55,26 @@ private:
     LookAndFeel lnf;
     MBRPAudioProcessor& processorRef;
 
-    // --- Компоненты GUI ---
+    // Компоненты GUI
     ControlBar controlBar;
-    SpectrumAnalyzer analyzer;
-    MBRP_GUI::AnalyzerOverlay analyzerOverlay; // Теперь использует объявление выше
+    MBRP_GUI::SpectrumAnalyzer analyzer; // Используем новый анализатор
+    MBRP_GUI::AnalyzerOverlay analyzerOverlay;
     MBRP_GUI::BandSelectControls bandSelectControls;
-    // ----------------------
 
-    // Контролы панорамы/кроссовера (остаются)
+    // Контролы
     juce::Slider lowMidCrossoverSlider, midHighCrossoverSlider;
     juce::Label lowMidCrossoverLabel, midHighCrossoverLabel;
     RotarySliderWithLabels panSlider;
     juce::Label panLabel;
-    // ---------------------------------------------------
 
+    // Attachments
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
-
     SliderAttachment lowMidCrossoverAttachment, midHighCrossoverAttachment;
     std::unique_ptr<SliderAttachment> panAttachment;
 
-    void updatePanAttachment(int bandIndex); // Остается
+    // Методы
+    void updatePanAttachment(int bandIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessorEditor)
 };
