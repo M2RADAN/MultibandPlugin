@@ -2,7 +2,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "../Source/PluginProcessor.h" // Убедитесь, что путь правильный
+#include "../Source/PluginProcessor.h"
 
 //==============================================================================
 class SpectrumAnalyzer : public juce::Component,
@@ -20,8 +20,7 @@ public:
 private:
     MBRPAudioProcessor& audioProcessor;
 
-    std::vector<float> spectrumData; // Будет переименован/удален
-    std::vector<float> displayData;  // Данные для отображения (с затуханием)
+    std::vector<float> displayData;  // Данные для отображения (теперь с EMA)
     std::atomic<float> peakDbLevel{ -100.0f };
 
     void drawSpectrum(juce::Graphics& g, const juce::Rectangle<float>& bounds);
@@ -36,16 +35,21 @@ private:
     const float minDb = -100.0f;
     const float maxDb = 30.0f;
 
-    // --- ДОБАВЛЕНО: Коэффициент затухания ---
-    const float decayFactor = 0.68f; // Значение < 1.0. Чем меньше, тем быстрее затухание.
-    // --------------------------------------
+       // Коэффициент затухания больше не нужен в таком виде
+      // const float decayFactor = 0.98f;
+
+            // --- ДОБАВЛЕНО: Коэффициенты для EMA сглаживания ---
+    const float attackAlpha = 0.7f;  // Скорость подъема (больше = быстрее)
+    const float releaseAlpha = 0.6f; // Скорость спада (меньше = медленнее/плавнее)
+    // --- ИЛИ ПРОСТОЙ ВАРИАНТ С ОДНИМ КОЭФФИЦИЕНТОМ ---
+    const float smoothingAlpha = 0.2f; // Коэффициент сглаживания (меньше = плавнее)
+        // --------------------------------------------------
 
     const juce::Colour overZeroDbColour{ juce::Colours::red };
     const juce::Colour spectrumLineColour{ juce::Colours::lightblue };
     const juce::Colour zeroDbLineColour{ juce::Colours::white.withAlpha(0.7f) };
     const juce::Colour gridLineColour{ juce::Colours::dimgrey.withAlpha(0.5f) };
     const juce::Colour textColour{ juce::Colours::lightgrey };
-
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzer)
 };

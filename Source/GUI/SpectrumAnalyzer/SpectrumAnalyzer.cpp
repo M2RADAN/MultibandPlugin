@@ -93,90 +93,52 @@ void SpectrumAnalyzer::timerCallback()
     {
         auto& fftInputDataRef = audioProcessor.getFftData();
         auto numBins = size_t(MBRPAudioProcessor::fftSize / 2);
-
-        // --- Создаем временный вектор для последних данных ---
         std::vector<float> latestDbData(numBins);
-        // --------------------------------------------------
 
-        // Проверяем и изменяем размер displayData, если нужно
         if (displayData.size() != numBins)
             displayData.resize(numBins);
 
-        const float normalizationFactor = 100.0f * 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize); // Используем ваш подобранный коэфф.
+        const float normalizationFactor = 6.0f * 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize); // Ваш коэфф.
 
-        float currentFramePeak = minDb; // Пик для *этого* кадра FFT
+        float currentFramePeak = minDb;
 
-        // --- 1. Вычисляем последние уровни дБ ---
+        // 1. Вычисляем последние уровни дБ
         for (size_t i = 0; i < numBins; ++i)
         {
             float magnitude = fftInputDataRef[i];
             float normalizedMagnitude = magnitude * normalizationFactor;
             latestDbData[i] = juce::Decibels::gainToDecibels(normalizedMagnitude, minDb);
 
-            // Обновляем пик для текущего реального сигнала
             if (latestDbData[i] > currentFramePeak)
-            {
                 currentFramePeak = latestDbData[i];
-            }
         }
-        // Сохраняем реальный пик
         peakDbLevel.store(currentFramePeak);
-        // ----------------------------------------
 
-        // --- 2. Обновляем отображаемые данные с затуханием ---
+        // 2. Обновляем отображаемые данные с использованием EMA
         for (size_t i = 0; i < numBins; ++i)
         {
             float newVal = latestDbData[i];
             float oldVal = displayData[i];
 
-            if (newVal > oldVal) // Атака: Увеличиваем мгновенно
-            {
-                displayData[i] = newVal;
-            }
-            else // Затухание: Уменьшаем плавно
-            {
-                // Умножаем на коэффициент затухания
-                float oldGain = juce::Decibels::decibelsToGain(oldVal);
-                float decayedGain = oldGain * decayFactor;
-                float decayedDb = juce::Decibels::gainToDecibels(decayedGain, minDb);
-                displayData[i] = std::max(decayedDb, newVal);
-            }
-        }
-        // --------------------------------------------------
+            // --- Вариант 1: Разные коэффициенты атаки/затухания ---
+            float alpha = (newVal > oldVal) ? attackAlpha : releaseAlpha;
+           /* displayData[i] = alpha * newVal + (1.0f - alpha) * oldVal;*/
 
-        repaint(); // Запрашиваем перерисовку с новыми displayData
+            // --- Вариант 2: Один коэффициент сглаживания ---
+             displayData[i] = smoothingAlpha * newVal + (1.0f - smoothingAlpha) * oldVal;
+
+            // Убеждаемся, что не ушли ниже minDb (хотя EMA не должен этого делать при alpha > 0)
+            displayData[i] = std::max(minDb, displayData[i]);
+        }
+        repaint(); // Перерисовываем с усредненными displayData
     }
-    else // Если новых данных FFT нет
+    else // Если новых данных нет, старые значения НЕ меняются (нет затухания до нуля)
     {
-        // --- 3. Применяем затухание, даже если нет новых данных ---
-        bool needsRepaint = false;
-        for (size_t i = 0; i < displayData.size(); ++i)
-        {
-            float oldVal = displayData[i];
-            if (oldVal > minDb) // Затухаем, только если есть что затухать
-            {
-                float oldGain = juce::Decibels::decibelsToGain(oldVal);
-                float decayedGain = oldGain * decayFactor;
-                float decayedDb = juce::Decibels::gainToDecibels(decayedGain, minDb);
-                // Сравниваем с предыдущим значением, чтобы определить, нужна ли перерисовка
-                if (decayedDb < oldVal)
-                {
-                    displayData[i] = decayedDb;
-                    needsRepaint = true;
-                }
-                else // Если затухание не изменило значение (уперлись в minDb), можно остановить
-                {
-                    displayData[i] = minDb; // Устанавливаем точно в minDb
-                    if (!juce::approximatelyEqual(oldVal, minDb)) needsRepaint = true; // Перерисовать, если было не minDb
-                }
-            }
-        }
-        // Перерисовываем, только если значения действительно изменились из-за затухания
-        if (needsRepaint)
-        {
-            repaint();
-        }
-        // ------------------------------------------------------
+        // В этом варианте с EMA затухание уже встроено.
+        // Если сигнал пропадает (newVal становится minDb), displayData будет
+        // экспоненциально стремиться к minDb с коэффициентом releaseAlpha (или smoothingAlpha).
+        // Ничего дополнительно делать не нужно, кроме, возможно, редкой перерисовки
+        // для анимации затухания, но timerCallback и так вызывается часто.
     }
 }
 
@@ -301,7 +263,6 @@ void SpectrumAnalyzer::drawGrid(juce::Graphics& g, const juce::Rectangle<float>&
     }
 }
 
-
 void SpectrumAnalyzer::drawSpectrum(juce::Graphics& g, const juce::Rectangle<float>& bounds)
 {
     using namespace juce;
@@ -310,98 +271,96 @@ void SpectrumAnalyzer::drawSpectrum(juce::Graphics& g, const juce::Rectangle<flo
     auto top = bounds.getY();
     auto bottom = bounds.getBottom();
     auto left = bounds.getX();
-    auto right = bounds.getRight(); // Добавим правую границу для удобства
+    auto right = bounds.getRight();
     auto numBins = displayData.size();
     auto sampleRate = audioProcessor.getSampleRate();
 
-    if (numBins == 0 || sampleRate <= 0 || width <= 0) return; // Безопасная проверка
+    if (numBins == 0 || sampleRate <= 0 || width <= 0) return;
 
-    // --- Собираем точки для отрисовки ---
-    // Сохраняем только точки в видимом диапазоне частот
     std::vector<Point<float>> points;
-    points.reserve(numBins); // Предварительное выделение памяти
+    points.reserve(numBins);
 
-    // Добавляем начальную точку на левой границе внизу
-    points.push_back({ left, bottom });
+    // --- ИЗМЕНЕНИЕ: Начинаем рисовать со 2-го или 3-го бина ---
+    const int firstBinToDraw = 3; // Игнорируем бин 0 (DC) и бин 1
 
-    for (size_t i = 1; i < numBins; ++i)
+    // Добавляем начальную точку внизу слева (или на уровне первого рисуемого бина)
+    if (firstBinToDraw < numBins)
+    {
+        float firstFreq = static_cast<float>(firstBinToDraw) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+        if (firstFreq >= minFreq)
+        {
+            points.push_back({ left + frequencyToX(minFreq, width), bottom }); // Начинаем снизу
+        }
+        else // Если даже firstBinToDraw ниже minFreq, начинаем с left, bottom
+        {
+            points.push_back({ left, bottom });
+        }
+    }
+    else {
+        points.push_back({ left, bottom }); // Если бинов мало, начинаем снизу
+    }
+
+
+    for (size_t i = firstBinToDraw; i < numBins; ++i) // <-- Начинаем с firstBinToDraw
     {
         float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
 
-        // Ограничиваем частоты видимой областью + небольшой запас
-        if (freq >= minFreq * 0.9f && freq <= maxFreq * 1.1f)
+        if (freq >= minFreq && freq <= maxFreq)
         {
             float x = left + frequencyToX(freq, width);
-            // --- ИЗМЕНЕНО: Используем displayData ---
             float dbValue = displayData[i];
-            // --------------------------------------
+
+            // --- ИЗМЕНЕНИЕ: Небольшое ослабление первых нескольких бинов (визуальное) ---
+            // const float lowBinAttenuationFactor = 0.8f; // 0.0 до 1.0
+            // const int binsToAttenuate = 5;
+            // if (i < firstBinToDraw + binsToAttenuate) {
+            //     float factor = juce::jmap(float(i), float(firstBinToDraw -1), float(firstBinToDraw + binsToAttenuate), lowBinAttenuationFactor, 1.0f);
+            //     // Применяем ослабление к dB (не очень корректно, лучше к gain, но для визуала сойдет)
+            //     // Или проще: просто не рисуем самые первые, как сделано выше
+            // }
+            // --------------------------------------------------------------------
+
             float y = jmap(dbValue, minDb, maxDb, bottom, top);
             x = jlimit(left, right, x);
             y = jlimit(top, y, bottom);
-            points.push_back({ x, y });
+            points.push_back({ x, y }); // Добавляем каждую точку
         }
-        // Прерываем цикл, если вышли за правую границу (оптимизация)
-        if (freq > maxFreq * 1.1f)
-            break;
+        if (freq > maxFreq * 1.05) break;
     }
+    points.push_back({ right, bottom }); // Конечная точка
 
-    // Добавляем конечную точку на правой границе внизу
-    points.push_back({ right, bottom });
+    if (points.size() < 2) return;
 
-    if (points.size() < 2) return; // Нечего рисовать
-
-    // --- Рисуем основную кривую с использованием cubicTo ---
+    // --- Рисуем основную кривую ---
     Path spectrumPath;
-    spectrumPath.startNewSubPath(points[0]); // Начинаем с первой точки (left, bottom)
-
+    spectrumPath.startNewSubPath(points[0]);
     for (size_t i = 1; i < points.size(); ++i)
     {
-        // Предыдущая точка
-        const auto& p0 = points[i - 1];
-        // Текущая точка (конечная для сегмента)
-        const auto& p1 = points[i];
-
-        // Контрольные точки для кубической кривой Безье
-        // cp1 контролирует кривизну *после* p0
-        // cp2 контролирует кривизну *перед* p1
-        // Простой способ: разместить их горизонтально между точками
-        Point<float> cp1, cp2;
-        float midpointX = (p0.x + p1.x) * 0.5f;
-        cp1.x = midpointX;
-        cp1.y = p0.y; // Вертикально на уровне предыдущей точки
-        cp2.x = midpointX;
-        cp2.y = p1.y; // Вертикально на уровне текущей точки
-
-        // Добавляем кубический сегмент
-        spectrumPath.cubicTo(cp1, cp2, p1);
+        spectrumPath.lineTo(points[i]); // Рисуем прямые линии
     }
 
-    // --- Заливка под кривой (опционально) ---
-    // Path должна быть замкнута для корректной заливки (мы добавили точки на bottom)
+    // --- Заливка ---
     ColourGradient fillGradient(spectrumLineColour.withAlpha(0.4f), left, bottom,
         spectrumLineColour.darker(0.8f).withAlpha(0.1f), left, top, false);
     g.setGradientFill(fillGradient);
-    g.fillPath(spectrumPath); // Заливаем сформированный путь
+    g.fillPath(spectrumPath);
 
-    // --- Обводка кривой ---
+    // --- Обводка ---
     g.setColour(spectrumLineColour);
-    g.strokePath(spectrumPath, PathStrokeType(1.5f));
+    g.strokePath(spectrumPath, PathStrokeType(1.0f));
 
-
-    // --- Рисуем красную кривую для значений выше 0 дБ (Clipping) ---
-    // Логика остается похожей, но используем cubicTo вместо lineTo
+    // --- Рисуем красную кривую > 0 дБ (логика остается прежней, но начало цикла тоже сдвинуто) ---
     Path overZeroPath;
     bool pathStarted = false;
     float zeroDbY = jmap(0.0f, minDb, maxDb, bottom, top);
-    zeroDbY = jlimit(top, zeroDbY, bottom); // Ограничиваем Y для 0 дБ
+    zeroDbY = jlimit(top, zeroDbY, bottom);
+    std::vector<Point<float>> pointsAboveZero;
 
-    // Нам нужны исходные dB значения, чтобы точно найти пересечение с 0 дБ
-    std::vector<Point<float>> pointsAboveZero; // Точки для красной кривой
-
-    for (size_t i = 1; i < numBins; ++i) // Снова итерируем по бинам
+    for (size_t i = firstBinToDraw; i < numBins; ++i) // <-- Начинаем с firstBinToDraw
     {
+        // ... (остальная логика отрисовки красной линии без изменений, она использует displayData[i]) ...
         float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-        if (freq < minFreq || freq > maxFreq) continue;
+        if (freq < minFreq || freq > maxFreq) continue; // Пропускаем частоты вне диапазона
 
         float currentDb = displayData[i];
         float x = left + frequencyToX(freq, width);
@@ -414,19 +373,24 @@ void SpectrumAnalyzer::drawSpectrum(juce::Graphics& g, const juce::Rectangle<flo
 
             if (!pathStarted) // Начинаем новый сегмент
             {
-                // Находим предыдущую точку (если она была ниже 0, нужна точка пересечения)
-                float prevDb = (i > 1) ? displayData[i - 1] : minDb;
-                if (prevDb < 0.0f && i > 1)
+                // Ищем предыдущий бин (учитывая firstBinToDraw)
+                size_t prev_i = (i > firstBinToDraw) ? i - 1 : i; // Безопасный индекс
+                float prevDb = (i > firstBinToDraw) ? displayData[prev_i] : minDb;
+
+                if (prevDb < 0.0f) // Если предыдущий был ниже 0
                 {
-                    // Найдем точку пересечения с 0 дБ (приблизительно)
-                    float prevFreq = static_cast<float>(i - 1) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-                    float prevX = left + frequencyToX(prevFreq, width);
-                    prevX = jlimit(left, right, prevX);
-                    // Добавляем точку на уровне 0 дБ
-                    pointsAboveZero.push_back({ prevX, zeroDbY });
+                    float prevFreq = static_cast<float>(prev_i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+                    if (prevFreq >= minFreq) // Убедимся, что предыдущая частота валидна
+                    {
+                        float prevX = left + frequencyToX(prevFreq, width);
+                        prevX = jlimit(left, right, prevX);
+                        pointsAboveZero.push_back({ prevX, zeroDbY }); // Добавляем точку пересечения
+                    }
+                    else { // Если предыдущая частота невалидна, начинаем с левого края на 0 дБ
+                        pointsAboveZero.push_back({ left, zeroDbY });
+                    }
                 }
-                // Добавляем текущую точку (которая выше 0 дБ)
-                pointsAboveZero.push_back({ x, y });
+                pointsAboveZero.push_back({ x, y }); // Добавляем текущую точку
                 pathStarted = true;
             }
             else // Продолжаем сегмент
@@ -438,25 +402,16 @@ void SpectrumAnalyzer::drawSpectrum(juce::Graphics& g, const juce::Rectangle<flo
         {
             if (pathStarted) // Заканчиваем сегмент
             {
-                // Добавляем последнюю точку на уровне 0 дБ
-                pointsAboveZero.push_back({ x, zeroDbY });
-
-                // Рисуем кривую для собранных точек
+                pointsAboveZero.push_back({ x, zeroDbY }); // Заканчиваем на 0 дБ
                 if (pointsAboveZero.size() >= 2)
                 {
                     overZeroPath.startNewSubPath(pointsAboveZero[0]);
                     for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
                     {
-                        const auto& p0 = pointsAboveZero[p_idx - 1];
-                        const auto& p1 = pointsAboveZero[p_idx];
-                        Point<float> cp1, cp2;
-                        float midpointX = (p0.x + p1.x) * 0.5f;
-                        cp1.x = midpointX; cp1.y = p0.y;
-                        cp2.x = midpointX; cp2.y = p1.y;
-                        overZeroPath.cubicTo(cp1, cp2, p1);
+                        overZeroPath.lineTo(pointsAboveZero[p_idx]);
                     }
                     g.setColour(overZeroDbColour);
-                    g.strokePath(overZeroPath, PathStrokeType(1.5f));
+                    g.strokePath(overZeroPath, PathStrokeType(1.0f));
                 }
                 overZeroPath.clear();
                 pointsAboveZero.clear();
@@ -464,24 +419,18 @@ void SpectrumAnalyzer::drawSpectrum(juce::Graphics& g, const juce::Rectangle<flo
             }
         }
     }
-    // Если вышли из цикла, а сегмент был активен
+    // Закрываем последний сегмент, если нужно
     if (pathStarted && pointsAboveZero.size() >= 2)
     {
-        // Добавляем конечную точку на правой границе на 0 дБ? Или просто рисуем то, что есть.
-        // pointsAboveZero.push_back({right, zeroDbY});
+        // Можно добавить конечную точку на right, zeroDbY
+        // pointsAboveZero.push_back({ right, zeroDbY });
         overZeroPath.startNewSubPath(pointsAboveZero[0]);
         for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
         {
-            const auto& p0 = pointsAboveZero[p_idx - 1];
-            const auto& p1 = pointsAboveZero[p_idx];
-            Point<float> cp1, cp2;
-            float midpointX = (p0.x + p1.x) * 0.5f;
-            cp1.x = midpointX; cp1.y = p0.y;
-            cp2.x = midpointX; cp2.y = p1.y;
-            overZeroPath.cubicTo(cp1, cp2, p1);
+            overZeroPath.lineTo(pointsAboveZero[p_idx]);
         }
         g.setColour(overZeroDbColour);
-        g.strokePath(overZeroPath, PathStrokeType(1.5f));
+        g.strokePath(overZeroPath, PathStrokeType(1.0f));
     }
 }
 
