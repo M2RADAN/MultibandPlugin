@@ -98,7 +98,7 @@ void SpectrumAnalyzer::timerCallback()
         if (displayData.size() != numBins)
             displayData.resize(numBins);
 
-        const float normalizationFactor = 6.0f * 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize); // Ваш коэфф.
+        const float normalizationFactor = 600.0f * 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize); // Ваш коэфф.
 
         float currentFramePeak = minDb;
 
@@ -147,7 +147,7 @@ void SpectrumAnalyzer::timerCallback()
 void SpectrumAnalyzer::drawGrid(juce::Graphics& g, const juce::Rectangle<float>& bounds)
 {
     using namespace juce;
-
+    
     // Fill background
     g.fillAll(Colours::black);
     // Draw outer border (using original integer bounds might look sharper)
@@ -193,6 +193,12 @@ void SpectrumAnalyzer::drawGrid(juce::Graphics& g, const juce::Rectangle<float>&
         // ----------------------------
         Rectangle<float> r(0, 0, textW, 10.f);
         r.setCentre(x, bottom + 7.f); // Position below the grid
+        r.setSize(textW, 10.f); // Высота метки
+
+        // --- ИЗМЕНЕНО: Позиционируем ВНУТРИ bounds ---
+        // Центрируем по X, Y - у самого нижнего края bounds (с небольшим отступом вверх)
+        r.setCentre(x, bottom - 5.f); // 5.f - половина высоты метки, для центрирования по вертикали у нижнего края
+
         // Check horizontal bounds before drawing
         if (r.getX() >= left - 2.f && r.getRight() <= right + 2.f) // Allow slight overlap
             g.drawFittedText(str, r.toNearestInt(), Justification::centred, 1);

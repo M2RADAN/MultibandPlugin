@@ -189,7 +189,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     updatePanAttachment(0);
 
     // Set editor size
-    setSize(600, 700);
+    setSize(900, 700);
     // Start editor timer (if needed for other UI updates)
     startTimerHz(60); // Reduced frequency, maybe 30 is enough?
 }
@@ -217,7 +217,7 @@ void MBRPAudioProcessorEditor::resized()
     controlBar.setBounds(bounds.removeFromTop(32));
 
     // Position Analyzer and Overlay in the upper section
-    int analyzerHeight = 250;
+    int analyzerHeight = 350;
     auto analyzerArea = bounds.removeFromTop(analyzerHeight);
     analyzer.setBounds(analyzerArea);
     analyzerOverlay.setBounds(analyzerArea); // Overlay sits directly on top
