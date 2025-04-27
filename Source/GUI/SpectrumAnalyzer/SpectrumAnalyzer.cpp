@@ -21,11 +21,11 @@ static float getTextLayoutWidth(const juce::String& text, const juce::Font& font
 SpectrumAnalyzer::SpectrumAnalyzer(MBRPAudioProcessor& p) :
     audioProcessor(p),
     // Initialize vector size based on processor's fftSize constant
-    spectrumData(size_t(MBRPAudioProcessor::fftSize / 2)) // Use size_t cast
+    displayData(size_t(MBRPAudioProcessor::fftSize / 2))
 {
     peakDbLevel.store(minDb); // Initialize atomic peak level
     // Fill initial spectrum data with minimum dB value
-    std::fill(spectrumData.begin(), spectrumData.end(), minDb);
+    std::fill(displayData.begin(), displayData.end(), minDb);
     // Start the timer for periodic updates
     startTimerHz(30); // Update rate (e.g., 30 times per second)
 }
@@ -88,51 +88,96 @@ void SpectrumAnalyzer::resized()
 
 void SpectrumAnalyzer::timerCallback()
 {
-    bool expected = true; // For compare_exchange_strong
-    // Check if new FFT data is ready from the processor
+    bool expected = true;
     if (audioProcessor.getIsFftDataReady().compare_exchange_strong(expected, false))
     {
-        // Get a reference to the FFT magnitude data from the processor
         auto& fftInputDataRef = audioProcessor.getFftData();
-        auto numBins = size_t(MBRPAudioProcessor::fftSize / 2); // Use size_t
+        auto numBins = size_t(MBRPAudioProcessor::fftSize / 2);
 
-        // Ensure our internal data vector has the correct size
-        if (spectrumData.size() != numBins)
-            spectrumData.resize(numBins);
+        // --- Создаем временный вектор для последних данных ---
+        std::vector<float> latestDbData(numBins);
+        // --------------------------------------------------
 
-        // --- Normalization Factor ---
-        // Factor to scale FFT magnitudes approximately to amplitude (where 1.0 ~ sine at 0dBFS)
-        // 2.0 / fftSize is a common starting point. Adjust experimentally if needed.
-        const float normalizationFactor = 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize);
-        // -----------------------------
+        // Проверяем и изменяем размер displayData, если нужно
+        if (displayData.size() != numBins)
+            displayData.resize(numBins);
 
-        float currentFramePeak = minDb; // Reset peak for the current frame
+        const float normalizationFactor = 100.0f * 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize); // Используем ваш подобранный коэфф.
 
-        // Process each frequency bin
+        float currentFramePeak = minDb; // Пик для *этого* кадра FFT
+
+        // --- 1. Вычисляем последние уровни дБ ---
         for (size_t i = 0; i < numBins; ++i)
         {
-            // Get magnitude from processor's data
             float magnitude = fftInputDataRef[i];
-            // Apply normalization
             float normalizedMagnitude = magnitude * normalizationFactor;
+            latestDbData[i] = juce::Decibels::gainToDecibels(normalizedMagnitude, minDb);
 
-            // Convert normalized magnitude to dB, clamping at minDb
-            spectrumData[i] = juce::Decibels::gainToDecibels(normalizedMagnitude, minDb);
-
-            // Update the peak level for this frame if the current bin is higher
-            if (spectrumData[i] > currentFramePeak)
+            // Обновляем пик для текущего реального сигнала
+            if (latestDbData[i] > currentFramePeak)
             {
-                currentFramePeak = spectrumData[i];
+                currentFramePeak = latestDbData[i];
             }
         }
-        // Atomically store the peak dB level found in this frame
+        // Сохраняем реальный пик
         peakDbLevel.store(currentFramePeak);
+        // ----------------------------------------
 
-        // Request a repaint to display the updated spectrum
-        repaint();
+        // --- 2. Обновляем отображаемые данные с затуханием ---
+        for (size_t i = 0; i < numBins; ++i)
+        {
+            float newVal = latestDbData[i];
+            float oldVal = displayData[i];
+
+            if (newVal > oldVal) // Атака: Увеличиваем мгновенно
+            {
+                displayData[i] = newVal;
+            }
+            else // Затухание: Уменьшаем плавно
+            {
+                // Умножаем на коэффициент затухания
+                float oldGain = juce::Decibels::decibelsToGain(oldVal);
+                float decayedGain = oldGain * decayFactor;
+                float decayedDb = juce::Decibels::gainToDecibels(decayedGain, minDb);
+                displayData[i] = std::max(decayedDb, newVal);
+            }
+        }
+        // --------------------------------------------------
+
+        repaint(); // Запрашиваем перерисовку с новыми displayData
     }
-    // Optional: Implement peak hold decay logic here if desired
-    // Example: if (peakDbLevel.load() > minDb) peakDbLevel.store(peakDbLevel.load() - decayRate);
+    else // Если новых данных FFT нет
+    {
+        // --- 3. Применяем затухание, даже если нет новых данных ---
+        bool needsRepaint = false;
+        for (size_t i = 0; i < displayData.size(); ++i)
+        {
+            float oldVal = displayData[i];
+            if (oldVal > minDb) // Затухаем, только если есть что затухать
+            {
+                float oldGain = juce::Decibels::decibelsToGain(oldVal);
+                float decayedGain = oldGain * decayFactor;
+                float decayedDb = juce::Decibels::gainToDecibels(decayedGain, minDb);
+                // Сравниваем с предыдущим значением, чтобы определить, нужна ли перерисовка
+                if (decayedDb < oldVal)
+                {
+                    displayData[i] = decayedDb;
+                    needsRepaint = true;
+                }
+                else // Если затухание не изменило значение (уперлись в minDb), можно остановить
+                {
+                    displayData[i] = minDb; // Устанавливаем точно в minDb
+                    if (!juce::approximatelyEqual(oldVal, minDb)) needsRepaint = true; // Перерисовать, если было не minDb
+                }
+            }
+        }
+        // Перерисовываем, только если значения действительно изменились из-за затухания
+        if (needsRepaint)
+        {
+            repaint();
+        }
+        // ------------------------------------------------------
+    }
 }
 
 // --- Drawing Helper Functions ---
@@ -265,110 +310,176 @@ void SpectrumAnalyzer::drawSpectrum(juce::Graphics& g, const juce::Rectangle<flo
     auto top = bounds.getY();
     auto bottom = bounds.getBottom();
     auto left = bounds.getX();
-    auto numBins = spectrumData.size();
-    auto sampleRate = audioProcessor.getSampleRate(); // Get current sample rate
+    auto right = bounds.getRight(); // Добавим правую границу для удобства
+    auto numBins = displayData.size();
+    auto sampleRate = audioProcessor.getSampleRate();
 
-    if (numBins == 0 || sampleRate <= 0) return; // Avoid drawing if no data or invalid state
+    if (numBins == 0 || sampleRate <= 0 || width <= 0) return; // Безопасная проверка
 
-    // --- Draw main spectrum line (below 0dB or all if no clipping visualization) ---
-    Path spectrumPath;
-    // Start path from the bottom-left edge corresponding to minFreq
-    spectrumPath.startNewSubPath(left + frequencyToX(minFreq, width), bottom);
+    // --- Собираем точки для отрисовки ---
+    // Сохраняем только точки в видимом диапазоне частот
+    std::vector<Point<float>> points;
+    points.reserve(numBins); // Предварительное выделение памяти
 
-    for (size_t i = 1; i < numBins; ++i) // Start from bin 1 (skip DC)
-    {
-        // Calculate frequency for the current bin
-        float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-        // Skip bins outside the displayable frequency range
-        if (freq < minFreq || freq > maxFreq) continue;
-
-        float x = left + frequencyToX(freq, width);
-        // Map dB value to Y coordinate, clamping Y within the bounds [top, bottom]
-        float y = juce::jmap(spectrumData[i], minDb, maxDb, bottom, top);
-        y = juce::jlimit(top, y, bottom); // Ensure Y stays within bounds
-        spectrumPath.lineTo(x, y);
-    }
-    // Add final point at maxFreq on the bottom line to close the shape visually
-    spectrumPath.lineTo(left + frequencyToX(maxFreq, width), bottom);
-
-    // --- Fill the area below the spectrum line ---
-    // Create a gradient fill (optional, looks nice)
-    ColourGradient fillGradient(spectrumLineColour.withAlpha(0.4f), left, bottom,
-        spectrumLineColour.darker(0.8f).withAlpha(0.1f), left, top, false);
-    g.setGradientFill(fillGradient);
-    g.fillPath(spectrumPath);
-
-    // --- Draw the spectrum outline ---
-    g.setColour(spectrumLineColour); // Use defined spectrum color
-    g.strokePath(spectrumPath, PathStrokeType(1.5f)); // Draw the line itself
-
-    // --- Draw spectrum segment above 0dB (clipping indicator) ---
-    Path overZeroPath;
-    bool pathStarted = false; // Track if the red path segment is active
-    float zeroDbY = jmap(0.0f, minDb, maxDb, bottom, top); // Y coordinate of 0dB line
-    zeroDbY = juce::jlimit(top, zeroDbY, bottom); // Clamp 0dB line within bounds
+    // Добавляем начальную точку на левой границе внизу
+    points.push_back({ left, bottom });
 
     for (size_t i = 1; i < numBins; ++i)
     {
         float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+
+        // Ограничиваем частоты видимой областью + небольшой запас
+        if (freq >= minFreq * 0.9f && freq <= maxFreq * 1.1f)
+        {
+            float x = left + frequencyToX(freq, width);
+            // --- ИЗМЕНЕНО: Используем displayData ---
+            float dbValue = displayData[i];
+            // --------------------------------------
+            float y = jmap(dbValue, minDb, maxDb, bottom, top);
+            x = jlimit(left, right, x);
+            y = jlimit(top, y, bottom);
+            points.push_back({ x, y });
+        }
+        // Прерываем цикл, если вышли за правую границу (оптимизация)
+        if (freq > maxFreq * 1.1f)
+            break;
+    }
+
+    // Добавляем конечную точку на правой границе внизу
+    points.push_back({ right, bottom });
+
+    if (points.size() < 2) return; // Нечего рисовать
+
+    // --- Рисуем основную кривую с использованием cubicTo ---
+    Path spectrumPath;
+    spectrumPath.startNewSubPath(points[0]); // Начинаем с первой точки (left, bottom)
+
+    for (size_t i = 1; i < points.size(); ++i)
+    {
+        // Предыдущая точка
+        const auto& p0 = points[i - 1];
+        // Текущая точка (конечная для сегмента)
+        const auto& p1 = points[i];
+
+        // Контрольные точки для кубической кривой Безье
+        // cp1 контролирует кривизну *после* p0
+        // cp2 контролирует кривизну *перед* p1
+        // Простой способ: разместить их горизонтально между точками
+        Point<float> cp1, cp2;
+        float midpointX = (p0.x + p1.x) * 0.5f;
+        cp1.x = midpointX;
+        cp1.y = p0.y; // Вертикально на уровне предыдущей точки
+        cp2.x = midpointX;
+        cp2.y = p1.y; // Вертикально на уровне текущей точки
+
+        // Добавляем кубический сегмент
+        spectrumPath.cubicTo(cp1, cp2, p1);
+    }
+
+    // --- Заливка под кривой (опционально) ---
+    // Path должна быть замкнута для корректной заливки (мы добавили точки на bottom)
+    ColourGradient fillGradient(spectrumLineColour.withAlpha(0.4f), left, bottom,
+        spectrumLineColour.darker(0.8f).withAlpha(0.1f), left, top, false);
+    g.setGradientFill(fillGradient);
+    g.fillPath(spectrumPath); // Заливаем сформированный путь
+
+    // --- Обводка кривой ---
+    g.setColour(spectrumLineColour);
+    g.strokePath(spectrumPath, PathStrokeType(1.5f));
+
+
+    // --- Рисуем красную кривую для значений выше 0 дБ (Clipping) ---
+    // Логика остается похожей, но используем cubicTo вместо lineTo
+    Path overZeroPath;
+    bool pathStarted = false;
+    float zeroDbY = jmap(0.0f, minDb, maxDb, bottom, top);
+    zeroDbY = jlimit(top, zeroDbY, bottom); // Ограничиваем Y для 0 дБ
+
+    // Нам нужны исходные dB значения, чтобы точно найти пересечение с 0 дБ
+    std::vector<Point<float>> pointsAboveZero; // Точки для красной кривой
+
+    for (size_t i = 1; i < numBins; ++i) // Снова итерируем по бинам
+    {
+        float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
         if (freq < minFreq || freq > maxFreq) continue;
 
-        float currentDb = spectrumData[i];
+        float currentDb = displayData[i];
         float x = left + frequencyToX(freq, width);
-        // Y coordinate clamped within bounds [top, bottom]
-        float y = jmap(currentDb, minDb, maxDb, bottom, top);
-        y = juce::jlimit(top, y, bottom);
+        x = jlimit(left, right, x); // Ограничиваем X
 
-        // If current point is above (or exactly at) the 0dB line
-        if (y <= zeroDbY)
+        if (currentDb >= 0.0f) // Если точка выше или на 0 дБ
         {
-            if (!pathStarted) // Starting a new segment above 0dB
-            {
-                // Find the previous point to start the segment correctly
-                float prevX = (i > 1) ? left + frequencyToX(static_cast<float>(i - 1) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize), width)
-                    : x; // Use current x if it's the first relevant bin
-                float prevDb = (i > 1) ? spectrumData[i - 1] : minDb;
-                float prevY = jmap(prevDb, minDb, maxDb, bottom, top);
-                prevY = juce::jlimit(top, prevY, bottom);
+            float y = jmap(currentDb, minDb, maxDb, bottom, top);
+            y = jlimit(top, y, bottom); // Ограничиваем Y
 
-                // If the previous point was below 0dB, start the red path from the 0dB line
-                if (prevY > zeroDbY)
+            if (!pathStarted) // Начинаем новый сегмент
+            {
+                // Находим предыдущую точку (если она была ниже 0, нужна точка пересечения)
+                float prevDb = (i > 1) ? displayData[i - 1] : minDb;
+                if (prevDb < 0.0f && i > 1)
                 {
-                    overZeroPath.startNewSubPath(prevX, zeroDbY); // Start at intersection with 0dB
-                    overZeroPath.lineTo(x, y);            // Line to the current point (above 0dB)
+                    // Найдем точку пересечения с 0 дБ (приблизительно)
+                    float prevFreq = static_cast<float>(i - 1) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+                    float prevX = left + frequencyToX(prevFreq, width);
+                    prevX = jlimit(left, right, prevX);
+                    // Добавляем точку на уровне 0 дБ
+                    pointsAboveZero.push_back({ prevX, zeroDbY });
                 }
-                else // If the previous point was also above or at 0dB, start from there
-                {
-                    overZeroPath.startNewSubPath(prevX, prevY);
-                    overZeroPath.lineTo(x, y);
-                }
+                // Добавляем текущую точку (которая выше 0 дБ)
+                pointsAboveZero.push_back({ x, y });
                 pathStarted = true;
             }
-            else // Continue an existing segment above 0dB
+            else // Продолжаем сегмент
             {
-                overZeroPath.lineTo(x, y);
+                pointsAboveZero.push_back({ x, y });
             }
         }
-        else // Current point is below 0dB
+        else // Точка ниже 0 дБ
         {
-            if (pathStarted) // Just finished a segment above 0dB
+            if (pathStarted) // Заканчиваем сегмент
             {
-                // End the path segment at the 0dB line for the current x
-                overZeroPath.lineTo(x, zeroDbY);
-                // Draw the completed red segment
-                g.setColour(overZeroDbColour); // Use defined clipping color
-                g.strokePath(overZeroPath, PathStrokeType(1.5f));
-                overZeroPath.clear(); // Clear path for the next potential segment
-                pathStarted = false; // Reset flag
+                // Добавляем последнюю точку на уровне 0 дБ
+                pointsAboveZero.push_back({ x, zeroDbY });
+
+                // Рисуем кривую для собранных точек
+                if (pointsAboveZero.size() >= 2)
+                {
+                    overZeroPath.startNewSubPath(pointsAboveZero[0]);
+                    for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
+                    {
+                        const auto& p0 = pointsAboveZero[p_idx - 1];
+                        const auto& p1 = pointsAboveZero[p_idx];
+                        Point<float> cp1, cp2;
+                        float midpointX = (p0.x + p1.x) * 0.5f;
+                        cp1.x = midpointX; cp1.y = p0.y;
+                        cp2.x = midpointX; cp2.y = p1.y;
+                        overZeroPath.cubicTo(cp1, cp2, p1);
+                    }
+                    g.setColour(overZeroDbColour);
+                    g.strokePath(overZeroPath, PathStrokeType(1.5f));
+                }
+                overZeroPath.clear();
+                pointsAboveZero.clear();
+                pathStarted = false;
             }
-            // If already below 0dB, do nothing for the red path
         }
     }
-    // If the loop finished while a red segment was active, draw the final part
-    if (pathStarted)
+    // Если вышли из цикла, а сегмент был активен
+    if (pathStarted && pointsAboveZero.size() >= 2)
     {
-        // Optionally, end the path at the right edge on the 0dB line
-        // overZeroPath.lineTo(right, zeroDbY);
+        // Добавляем конечную точку на правой границе на 0 дБ? Или просто рисуем то, что есть.
+        // pointsAboveZero.push_back({right, zeroDbY});
+        overZeroPath.startNewSubPath(pointsAboveZero[0]);
+        for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
+        {
+            const auto& p0 = pointsAboveZero[p_idx - 1];
+            const auto& p1 = pointsAboveZero[p_idx];
+            Point<float> cp1, cp2;
+            float midpointX = (p0.x + p1.x) * 0.5f;
+            cp1.x = midpointX; cp1.y = p0.y;
+            cp2.x = midpointX; cp2.y = p1.y;
+            overZeroPath.cubicTo(cp1, cp2, p1);
+        }
         g.setColour(overZeroDbColour);
         g.strokePath(overZeroPath, PathStrokeType(1.5f));
     }
