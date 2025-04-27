@@ -1,15 +1,15 @@
 #pragma once
 
-#include <JuceHeader.h>
 #include "PluginProcessor.h" // ¬ключает MBRPAudioProcessor
+#include <JuceHeader.h>
 
 // --- ¬ Ћё„ј≈ћ  ќћѕќЌ≈Ќ“џ GUI ---
 // ”бедись, что пути и пространства имен верны, и файлы скопированы
-#include "GUI/LookAndFeel.h"
-#include "GUI/SpectrumAnalyzer.h"
-#include "GUI/CustomButtons.h"
 #include "GUI/BandSelectControls.h"
+#include "GUI/CustomButtons.h"
+#include "GUI/LookAndFeel.h"
 #include "GUI/RotarySliderWithLabels.h"
+#include "GUI/SpectrumAnalyzer.h"
 // -------------------------------
 
 // --- ControlBar ---

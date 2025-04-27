@@ -71,6 +71,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     setupStandardSlider(lowMidCrossoverSlider, lowMidCrossoverLabel, "Low / Mid", juce::Slider::LinearHorizontal, juce::Colours::lightgrey);
     setupStandardSlider(midHighCrossoverSlider, midHighCrossoverLabel, "Mid / High", juce::Slider::LinearHorizontal, juce::Colours::lightgrey);
 
+    panSlider.setPopupDisplayEnabled(true, false, this);
     // --- ИЗМЕНЕНО: Настройка ОДНОГО кастомного слайдера панорамы ---
     // Основная настройка вида (цвета, текст) будет происходить в updatePanAttachment
     // Здесь просто делаем его видимым и настраиваем внешний лейбл
@@ -202,7 +203,8 @@ void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex)
     // 2. Обновляем параметр, с которым работает RotarySliderWithLabels
     //    и его внутренние метки/суффикс (суффикс не нужен для панорамы)
     panSlider.changeParam(rangedParam); // Передаем новый параметр
-    panSlider.labels.clear();          // Очищаем старые метки (если были)
+    panSlider.labels.clear();
+    panSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, true, 60, 20);// Очищаем старые метки (если были)
     // Добавляем метки для -1 (L), 0 (C), +1 (R)
     panSlider.labels.add({ 0.0f, "L" });   // Позиция 0.0 соответствует значению -1.0
     panSlider.labels.add({ 0.5f, "C" });   // Позиция 0.5 соответствует значению 0.0
