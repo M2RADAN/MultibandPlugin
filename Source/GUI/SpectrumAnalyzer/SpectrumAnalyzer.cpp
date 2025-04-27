@@ -163,7 +163,7 @@ namespace MBRP_GUI
             if (averagedMagnitudes == nullptr) return; // Не удалось получить данные
 
             // --- КОЭФФИЦИЕНТ УСИЛЕНИЯ (НАСТРОЙКА!) ---
-            const float gainAdjustment = -55.0f; // <-- НАСТРОЙТЕ ЭТО!
+            const float gainAdjustment = -65.0f; // <-- НАСТРОЙТЕ ЭТО!
             const float gainMultiplier = juce::Decibels::decibelsToGain(gainAdjustment);
             // -------------------------------------------
 
@@ -405,7 +405,7 @@ namespace MBRP_GUI
                 // Применяем к обоим значениям для консистентности отрисовки
                 float lowFreqAttenuation = 1.0f;
                 if (i < firstBinToDraw + lowFreqRollOffEndBin) {
-                    lowFreqAttenuation = juce::jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.6f, 1.0f); // От 0.3 до 1.0 (лоу было 0.3f)
+                    lowFreqAttenuation = juce::jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.45f, 1.0f); // От 0.3 до 1.0 (лоу было 0.3f)
                     // Ослабляем значение dB относительно mindB
                     displayDb = mindB + (displayDb - mindB) * lowFreqAttenuation;
                     peakDb = mindB + (peakDb - mindB) * lowFreqAttenuation;
