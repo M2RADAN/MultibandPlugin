@@ -50,7 +50,7 @@ public:
 
 
     // --- Члены для Анализатора Спектра (стиль witte) ---
-    static constexpr int fftOrder = 11; // Порядок FFT (2048)
+    static constexpr int fftOrder = 11; // Порядок FFT (2048) (1024 при 10)
     static constexpr int fftSize = 1 << fftOrder;
 
     std::atomic<bool> nextFFTBlockReady{ false }; // Флаг для анализатора

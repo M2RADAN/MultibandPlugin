@@ -367,179 +367,194 @@ namespace MBRP_GUI
         using namespace juce;
         auto width = bounds.getWidth(); auto top = bounds.getY(); auto bottom = bounds.getBottom();
         auto left = bounds.getX(); auto right = bounds.getRight();
-        auto numBins = displayData.size(); auto sampleRate = processor.getSampleRate();
+        auto numBins = displayData.size(); // Используем displayData
+        auto sampleRate = processor.getSampleRate();
+
+        // Проверка на валидность данных
         if (numBins == 0 || peakHoldLevels.size() != numBins || sampleRate <= 0 || width <= 0) return;
 
-        std::vector<Point<float>> spectrumPoints; std::vector<Point<float>> peakPointsVec;
-        spectrumPoints.reserve(numBins); peakPointsVec.reserve(numBins);
-        const int firstBinToDraw = 2; const float lowFreqRollOffEndBin = 10.0f;
+        // Векторы для хранения точек кривых
+        std::vector<Point<float>> spectrumPoints;
+        std::vector<Point<float>> peakPointsVec;
+        spectrumPoints.reserve(numBins); // Предварительное выделение памяти
+        peakPointsVec.reserve(numBins);
 
-        spectrumPoints.push_back({ left, bottom }); peakPointsVec.push_back({ left, bottom });
+        // Константы для обработки НЧ
+        const int firstBinToDraw = 2;           // Начинаем рисовать со 2-го бина (пропускаем DC и 1-й)
+        const float lowFreqRollOffEndBin = 10.0f; // До какого бина применять ослабление
 
-        for (size_t i = firstBinToDraw; i < numBins; ++i) {
-            float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-            if (freq >= minFreq && freq <= maxFreq) {
-                float x = left + frequencyToX(freq, width); x = jlimit(left, right, x);
-                float displayDb = displayData[i]; float peakDb = peakHoldLevels[i];
-                float lowFreqAttenuation = 1.0f;
-                if (i < firstBinToDraw + lowFreqRollOffEndBin) {
-                    lowFreqAttenuation = jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.3f, 1.0f);
-                    displayDb = mindB + (displayDb - mindB) * lowFreqAttenuation;
-                    peakDb = mindB + (peakDb - mindB) * lowFreqAttenuation;
-                }
-                float yDisplay = jlimit(top, jmap(displayDb, mindB, maxdB, bottom, top), bottom);
-                float yPeak = jlimit(top, jmap(peakDb, mindB, maxdB, bottom, top), bottom);
+        // Добавляем начальные точки внизу слева
+        spectrumPoints.push_back({ left, bottom });
+        peakPointsVec.push_back({ left, bottom });
 
-                spectrumPoints.push_back({ x, yDisplay });
-                // Оптимизация для пиковой линии (чтобы не было "лесенки" на вертикалях)
-                if (peakPointsVec.empty() || !juce::approximatelyEqual(x, peakPointsVec.back().x)) {
-                    peakPointsVec.push_back({ x, yPeak });
-                }
-                else {
-                    peakPointsVec.back().y = std::min(peakPointsVec.back().y, yPeak);
-                }
-            }
-            if (freq > maxFreq * 1.05) break;
-        }
-        spectrumPoints.push_back({ right, bottom }); peakPointsVec.push_back({ right, bottom });
-
-        if (spectrumPoints.size() < 2) return;
-
-        // Рисуем основную кривую (EMA) с cubicTo
-        Path spectrumPath; spectrumPath.startNewSubPath(spectrumPoints[0]);
-        for (size_t i = 1; i < spectrumPoints.size(); ++i) {
-            const auto& p0 = spectrumPoints[i - 1]; const auto& p1 = spectrumPoints[i];
-            Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y }, cp2{ (p0.x + p1.x) * 0.5f, p1.y };
-            spectrumPath.cubicTo(cp1, cp2, p1);
-        }
-        g.setColour(spectrumFillColour); g.fillPath(spectrumPath);
-        g.setColour(spectrumLineColour); g.strokePath(spectrumPath, PathStrokeType(1.5f));
-
-        // Рисуем пиковую кривую с lineTo
-        if (peakPointsVec.size() >= 2) {
-            Path peakPath; peakPath.startNewSubPath(peakPointsVec[0]);
-            for (size_t i = 1; i < peakPointsVec.size(); ++i) peakPath.lineTo(peakPointsVec[i]);
-            g.setColour(peakHoldLineColour); g.strokePath(peakPath, PathStrokeType(1.0f));
-        }
-
-        // Рисуем красную кривую > 0 дБ (для основной линии displayData, с cubicTo)
-        Path overZeroPath; bool pathStarted = false;
-        float zeroDbY = jlimit(top, jmap(0.0f, mindB, maxdB, bottom, top), bottom);
-        std::vector<Point<float>> pointsAboveZero;
-
+        // Собираем точки для основной (EMA) и пиковой (Peak Hold) линий
         for (size_t i = firstBinToDraw; i < numBins; ++i)
         {
             float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-            if (freq < minFreq || freq > maxFreq) continue;
 
-            float originalDb = displayData[i]; // Исходное значение
-            float displayDb = originalDb; // Значение для отрисовки и проверки
-            float x = left + frequencyToX(freq, width);
-            x = jlimit(left, right, x);
-
-            // Применяем ослабление НЧ к значению для отрисовки/проверки
-            float lowFreqAttenuation = 1.0f;
-            if (i < firstBinToDraw + lowFreqRollOffEndBin) {
-                lowFreqAttenuation = juce::jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.3f, 1.0f);
-                displayDb = mindB + (originalDb - mindB) * lowFreqAttenuation;
-            }
-
-            // --- ИЗМЕНЕНО: Проверяем ОСЛАБЛЕННОЕ значение displayDb ---
-            if (displayDb >= 0.0f)
+            // Обрабатываем только частоты в видимом диапазоне
+            if (freq >= minFreq && freq <= maxFreq)
             {
-                // Маппим ослабленное значение в Y
-                float y = jlimit(top, jmap(displayDb, mindB, maxdB, bottom, top), bottom);
+                float x = left + frequencyToX(freq, width);
+                x = jlimit(left, right, x); // Ограничиваем X границами
 
-                if (!pathStarted)
-                {
-                    // --- Логика предыдущей точки ---
-                    // Здесь тоже нужно использовать ослабленное значение prevDisplayDb для консистентности
-                    size_t prev_i = (i > firstBinToDraw) ? i - 1 : i;
-                    float prevOriginalDb = (i > firstBinToDraw) ? displayData[prev_i] : mindB;
-                    float prevDisplayDb = prevOriginalDb; // Начинаем с оригинального
-                    // Ослабляем prevDb, если он в диапазоне
-                    if (prev_i >= firstBinToDraw && prev_i < firstBinToDraw + lowFreqRollOffEndBin) {
-                        float prevAttenuation = juce::jmap(float(prev_i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.3f, 1.0f);
-                        prevDisplayDb = mindB + (prevOriginalDb - mindB) * prevAttenuation;
-                    }
-                    // --- Конец ослабления prevDb ---
+                float displayDb = displayData[i]; // Сглаженное значение для основной линии
+                float peakDb = peakHoldLevels[i]; // Пиковое значение
 
-                    if (prevDisplayDb < 0.0f) // Проверяем ОСЛАБЛЕННЫЙ предыдущий
-                    {
-                        float prevFreq = static_cast<float>(prev_i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-                        if (prevFreq >= minFreq) {
-                            float prevX = jlimit(left, right, left + frequencyToX(prevFreq, width));
-                            pointsAboveZero.push_back({ prevX, zeroDbY });
-                        }
-                        else {
-                            pointsAboveZero.push_back({ left, zeroDbY });
-                        }
-                    }
-                    pointsAboveZero.push_back({ x, y });
-                    pathStarted = true;
+                // --- Визуальное ослабление самых низких частот ---
+                // Применяем к обоим значениям для консистентности отрисовки
+                float lowFreqAttenuation = 1.0f;
+                if (i < firstBinToDraw + lowFreqRollOffEndBin) {
+                    lowFreqAttenuation = juce::jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.3f, 1.0f); // От 0.3 до 1.0
+                    // Ослабляем значение dB относительно mindB
+                    displayDb = mindB + (displayDb - mindB) * lowFreqAttenuation;
+                    peakDb = mindB + (peakDb - mindB) * lowFreqAttenuation;
                 }
-                else // Продолжаем сегмент
-                {
-                    pointsAboveZero.push_back({ x, y });
+                // --------------------------------------------------
+
+                // Маппинг в Y-координаты и ограничение границами
+                float yDisplay = jlimit(top, jmap(displayDb, mindB, maxdB, bottom, top), bottom);
+                float yPeak = jlimit(top, jmap(peakDb, mindB, maxdB, bottom, top), bottom);
+
+                // Добавляем точку для основной кривой
+                spectrumPoints.push_back({ x, yDisplay });
+
+                // Добавляем точку для пиковой кривой (с оптимизацией для вертикальных линий)
+                if (peakPointsVec.empty() || !juce::approximatelyEqual(x, peakPointsVec.back().x)) {
+                    peakPointsVec.push_back({ x, yPeak }); // Новая X координата
+                }
+                else {
+                    // Та же X координата - берем самый высокий пик (минимальный Y)
+                    peakPointsVec.back().y = std::min(peakPointsVec.back().y, yPeak);
                 }
             }
-            else // Ослабленное значение НИЖЕ 0 дБ
+            // Прерываем цикл, если вышли далеко за правую границу
+            if (freq > maxFreq * 1.05) break;
+        }
+        // Добавляем конечные точки внизу справа
+        spectrumPoints.push_back({ right, bottom });
+        peakPointsVec.push_back({ right, bottom });
+
+        // Проверка, достаточно ли точек для рисования
+        if (spectrumPoints.size() < 2) return;
+
+        // --- Рисуем основную кривую (EMA) с cubicTo ---
+        Path spectrumPath;
+        spectrumPath.startNewSubPath(spectrumPoints[0]);
+        for (size_t i = 1; i < spectrumPoints.size(); ++i) {
+            const auto& p0 = spectrumPoints[i - 1];
+            const auto& p1 = spectrumPoints[i];
+            // Контрольные точки для кубической кривой Безье
+            Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y };
+            Point<float> cp2{ (p0.x + p1.x) * 0.5f, p1.y };
+            spectrumPath.cubicTo(cp1, cp2, p1); // Плавная линия
+        }
+        // Заливка под основной кривой
+        g.setColour(spectrumFillColour);
+        g.fillPath(spectrumPath);
+        // Обводка основной кривой
+        g.setColour(spectrumLineColour);
+        g.strokePath(spectrumPath, PathStrokeType(1.5f)); // Голубая линия
+
+        // --- Рисуем пиковую кривую с lineTo ---
+        if (peakPointsVec.size() >= 2) {
+            Path peakPath;
+            peakPath.startNewSubPath(peakPointsVec[0]);
+            for (size_t i = 1; i < peakPointsVec.size(); ++i) {
+                peakPath.lineTo(peakPointsVec[i]); // Прямая линия для пиков
+            }
+            g.setColour(peakHoldLineColour);
+            g.strokePath(peakPath, PathStrokeType(1.0f)); // Желтоватая тонкая линия
+        }
+
+        // --- ОПТИМИЗИРОВАННАЯ ОТРИСОВКА КРАСНОЙ ЛИНИИ (> 0 дБ) ---
+        Path overZeroPath;
+        bool isCurrentlyAboveZero = false;
+        float zeroDbY = jlimit(top, jmap(0.0f, mindB, maxdB, bottom, top), bottom); // Y нуля
+
+        std::vector<Point<float>> currentSegmentPoints;
+
+        // Итерируем по точкам основной кривой (spectrumPoints), так как они уже содержат ослабленные Y
+        for (size_t i = 1; i < spectrumPoints.size() - 1; ++i) // Пропускаем первую и последнюю точку (они всегда на bottom)
+        {
+            const auto& currentPoint = spectrumPoints[i];
+            const float y = currentPoint.y;
+            const float x = currentPoint.x;
+
+            // --- ПРОВЕРКА ПО Y координате ---
+            // Меньшее значение Y означает более высокий уровень на графике
+            if (y <= zeroDbY) // Если точка ВЫШЕ или НА линии нуля
             {
-                if (pathStarted) // Заканчиваем сегмент
+                if (!isCurrentlyAboveZero) // Начало нового сегмента > 0
                 {
-                    pointsAboveZero.push_back({ x, zeroDbY });
-                    if (pointsAboveZero.size() >= 2)
-                    {
-                        // Строим и рисуем overZeroPath как раньше
-                        overZeroPath.startNewSubPath(pointsAboveZero[0]);
-                        for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx) {
-                            // Строим путь для сегмента с cubicTo
-                            overZeroPath.startNewSubPath(pointsAboveZero[0]);
-                            for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
-                            {
-                                const auto& p0 = pointsAboveZero[p_idx - 1];
-                                const auto& p1 = pointsAboveZero[p_idx];
-                                // Рассчитываем контрольные точки для плавного перехода
-                                juce::Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y };
-                                juce::Point<float> cp2{ (p0.x + p1.x) * 0.5f, p1.y };
-                                overZeroPath.cubicTo(cp1, cp2, p1);
-                            }
-                            // Рисуем путь
-                            g.setColour(overZeroDbLineColour); // Красный цвет
-                            g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
-                        }
-                        g.setColour(overZeroDbLineColour);
-                        g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
+                    isCurrentlyAboveZero = true;
+                    currentSegmentPoints.clear();
+                    const auto& prevPoint = spectrumPoints[i - 1]; // Берем предыдущую точку
+
+                    // Если предыдущая точка была НИЖЕ нуля (y > zeroDbY)
+                    if (prevPoint.y > zeroDbY) {
+                        // Находим точку пересечения с zeroDbY по X (простая линейная интерполяция)
+                        float intersectX = prevPoint.x + (currentPoint.x - prevPoint.x) * (zeroDbY - prevPoint.y) / (currentPoint.y - prevPoint.y);
+                        intersectX = jlimit(left, intersectX, right); // Ограничиваем
+                        currentSegmentPoints.push_back({ intersectX, zeroDbY });
                     }
-                    overZeroPath.clear(); pointsAboveZero.clear(); pathStarted = false;
+                    else {
+                        // Если предыдущая точка была тоже >= 0 (на линии), начинаем с нее
+                        currentSegmentPoints.push_back(prevPoint);
+                    }
+                    currentSegmentPoints.push_back(currentPoint); // Добавляем текущую точку
                 }
+                else // Продолжение сегмента > 0
+                {
+                    currentSegmentPoints.push_back(currentPoint);
+                }
+            }
+            else // Текущая точка НИЖЕ нуля (y > zeroDbY)
+            {
+                if (isCurrentlyAboveZero) // Конец сегмента > 0
+                {
+                    isCurrentlyAboveZero = false;
+                    const auto& prevPoint = spectrumPoints[i - 1]; // Предыдущая точка (была <= zeroDbY)
+
+                    // Находим точку пересечения с zeroDbY
+                    float intersectX = prevPoint.x + (currentPoint.x - prevPoint.x) * (zeroDbY - prevPoint.y) / (currentPoint.y - prevPoint.y);
+                    intersectX = jlimit(left, intersectX, right);
+                    currentSegmentPoints.push_back({ intersectX, zeroDbY }); // Заканчиваем на линии нуля
+
+                    // Добавляем сегмент в общий путь
+                    if (currentSegmentPoints.size() >= 2) {
+                        overZeroPath.startNewSubPath(currentSegmentPoints[0]);
+                        for (size_t p_idx = 1; p_idx < currentSegmentPoints.size(); ++p_idx) {
+                            const auto& p0 = currentSegmentPoints[p_idx - 1]; const auto& p1 = currentSegmentPoints[p_idx];
+                            Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y }, cp2{ (p0.x + p1.x) * 0.5f, p1.y };
+                            overZeroPath.cubicTo(cp1, cp2, p1);
+                        }
+                    }
+                }
+                // Если и так были ниже нуля, ничего не делаем
             }
         }
-        // Закрываем последний сегмент
-        if (pathStarted && pointsAboveZero.size() >= 2)
+
+        // Обработка последнего сегмента (если закончился выше нуля)
+        if (isCurrentlyAboveZero && currentSegmentPoints.size() >= 2)
         {
-            // Строим и рисуем overZeroPath как раньше
-            overZeroPath.startNewSubPath(pointsAboveZero[0]);
-            for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx) {
-                overZeroPath.startNewSubPath(pointsAboveZero[0]);
-                for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
-                {
-                    const auto& p0 = pointsAboveZero[p_idx - 1];
-                    const auto& p1 = pointsAboveZero[p_idx];
-                    // Рассчитываем контрольные точки
-                    juce::Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y };
-                    juce::Point<float> cp2{ (p0.x + p1.x) * 0.5f, p1.y };
-                    overZeroPath.cubicTo(cp1, cp2, p1);
-                }
-                // Рисуем путь
-                g.setColour(overZeroDbLineColour); // Красный цвет
-                g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
+            // Добавляем последнюю точку на правом краю на уровне 0 дБ? Или на уровне последней точки?
+            // Лучше закончить на последней реальной точке, а не искусственно опускать до нуля.
+            overZeroPath.startNewSubPath(currentSegmentPoints[0]);
+            for (size_t p_idx = 1; p_idx < currentSegmentPoints.size(); ++p_idx) {
+                const auto& p0 = currentSegmentPoints[p_idx - 1]; const auto& p1 = currentSegmentPoints[p_idx];
+                Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y }, cp2{ (p0.x + p1.x) * 0.5f, p1.y };
+                overZeroPath.cubicTo(cp1, cp2, p1);
             }
+        }
+
+        // Рисуем ВЕСЬ красный путь ОДНИМ вызовом
+        if (!overZeroPath.isEmpty()) {
             g.setColour(overZeroDbLineColour);
             g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
         }
+        // --- КОНЕЦ БЛОКА КРАСНОЙ ЛИНИИ ---
     }
-
     // --- Отрисовка маркеров кроссовера ---
     void SpectrumAnalyzer::drawFrequencyMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds)
     {
