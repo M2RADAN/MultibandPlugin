@@ -11,7 +11,7 @@
 #include "Utilities.h"
 
 #include "LookAndFeel.h"
-#include "SpectrumAnalyzer.h"
+//#include "SpectrumAnalyzer.h"
 
 namespace MBRP_GUI
 {
@@ -35,22 +35,22 @@ juce::String getValString(const juce::RangedAudioParameter& param,
     return str;
 }
 
-juce::Rectangle<int> SpectrumAnalyzerUtils::getRenderArea(juce::Rectangle<int> bounds)
-{
-    bounds.removeFromTop(12);
-    bounds.removeFromBottom(2);
-    bounds.removeFromLeft(20);
-    bounds.removeFromRight(20);
-    return bounds;
-}
+//juce::Rectangle<int> SpectrumAnalyzerUtils::getRenderArea(juce::Rectangle<int> bounds)
+//{
+//    bounds.removeFromTop(12);
+//    bounds.removeFromBottom(2);
+//    bounds.removeFromLeft(20);
+//    bounds.removeFromRight(20);
+//    return bounds;
+//}
 
-juce::Rectangle<int> SpectrumAnalyzerUtils::getAnalysisArea(juce::Rectangle<int> bounds)
-{
-    bounds = getRenderArea(bounds); // Можем вызвать другую функцию этого же класса
-    bounds.removeFromTop(4);
-    bounds.removeFromBottom(4);
-    return bounds;
-}
+//juce::Rectangle<int> SpectrumAnalyzerUtils::getAnalysisArea(juce::Rectangle<int> bounds)
+//{
+//    bounds = getRenderArea(bounds); // Можем вызвать другую функцию этого же класса
+//    bounds.removeFromTop(4);
+//    bounds.removeFromBottom(4);
+//    return bounds;
+//}
 
 
 juce::Rectangle<int> getModuleBackgroundArea(juce::Rectangle<int> bounds)

@@ -1,14 +1,13 @@
-
 #pragma once
 
 #include <JuceHeader.h>
 #include <juce_dsp/juce_dsp.h>
 #include <atomic>
-// --- ВКЛЮЧАЕМ АДАПТИРОВАННЫЕ ЗАГОЛОВКИ ---
-// Убедись, что эти файлы существуют и используют пространство имен MBRP_GUI
-// Если они в той же папке, путь может быть другим, например "Fifo.h"
-#include "DSP/Fifo.h"
-#include "DSP/SingleChannelSampleFifo.h"
+// --- Г‚ГЉГ‹ГћГ—ГЂГ…ГЊ ГЂГ„ГЂГЏГ’Г€ГђГЋГ‚ГЂГЌГЌГ›Г… Г‡ГЂГѓГЋГ‹ГЋГ‚ГЉГ€ ---
+// Г“ГЎГҐГ¤ГЁГ±Гј, Г·ГІГ® ГЅГІГЁ ГґГ Г©Г«Г» Г±ГіГ№ГҐГ±ГІГўГіГѕГІ ГЁ ГЁГ±ГЇГ®Г«ГјГ§ГіГѕГІ ГЇГ°Г®Г±ГІГ°Г Г­Г±ГІГўГ® ГЁГ¬ГҐГ­ MBRP_GUI
+// Г…Г±Г«ГЁ Г®Г­ГЁ Гў ГІГ®Г© Г¦ГҐ ГЇГ ГЇГЄГҐ, ГЇГіГІГј Г¬Г®Г¦ГҐГІ ГЎГ»ГІГј Г¤Г°ГіГЈГЁГ¬, Г­Г ГЇГ°ГЁГ¬ГҐГ° "Fifo.h"
+//#include "DSP/Fifo.h"
+//#include "DSP/SingleChannelSampleFifo.h"
 // ---------------------------------------
 
 //==============================================================================
@@ -39,54 +38,78 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    // --- APVTS и Layout ---
+    // --- APVTS ГЁ Layout ---
     using APVTS = juce::AudioProcessorValueTreeState;
-    static APVTS::ParameterLayout createParameterLayout(); // Объявление функции создания Layout
-    // --- УБИРАЕМ НЕПРАВИЛЬНУЮ ИНИЦИАЛИЗАЦИЮ APVTS ОТСЮДА ---
+    static APVTS::ParameterLayout createParameterLayout(); // ГЋГЎГєГїГўГ«ГҐГ­ГЁГҐ ГґГіГ­ГЄГ¶ГЁГЁ Г±Г®Г§Г¤Г Г­ГЁГї Layout
+    // --- Г“ГЃГ€ГђГЂГ…ГЊ ГЌГ…ГЏГђГЂГ‚Г€Г‹ГњГЌГ“Гћ Г€ГЌГ€Г–Г€ГЂГ‹Г€Г‡ГЂГ–Г€Гћ APVTS ГЋГ’Г‘ГћГ„ГЂ ---
     // APVTS apvts{ *this, nullptr, "Parameters", createParameterLayout() };
     // -------------------------------------------------------
 
-    // Метод доступа к APVTS (использует приватный член apvts)
-    juce::AudioProcessorValueTreeState& getAPVTS() { return *apvts; } // Возвращаем по ссылке
+    // ГЊГҐГІГ®Г¤ Г¤Г®Г±ГІГіГЇГ  ГЄ APVTS (ГЁГ±ГЇГ®Г«ГјГ§ГіГҐГІ ГЇГ°ГЁГўГ ГІГ­Г»Г© Г·Г«ГҐГ­ apvts)
+    juce::AudioProcessorValueTreeState& getAPVTS() { return *apvts; } // Г‚Г®Г§ГўГ°Г Г№Г ГҐГ¬ ГЇГ® Г±Г±Г»Г«ГЄГҐ
 
-    // --- FIFO для анализатора ---
-    using SimpleFifo = MBRP_GUI::SingleChannelSampleFifo<juce::AudioBuffer<float>>;
-    SimpleFifo leftChannelFifo{ MBRP_GUI::Channel::Left };
-    SimpleFifo rightChannelFifo{ MBRP_GUI::Channel::Right };
+    // --- FIFO Г¤Г«Гї Г Г­Г Г«ГЁГ§Г ГІГ®Г°Г  ---
+    //using SimpleFifo = MBRP_GUI::SingleChannelSampleFifo<juce::AudioBuffer<float>>;
+    //SimpleFifo leftChannelFifo{ MBRP_GUI::Channel::Left };
+    //SimpleFifo rightChannelFifo{ MBRP_GUI::Channel::Right };
     // ---------------------------
 
-    // --- Указатели на параметры для Оверлея и Processor ---
+    // --- Г“ГЄГ Г§Г ГІГҐГ«ГЁ Г­Г  ГЇГ Г°Г Г¬ГҐГІГ°Г» Г¤Г«Гї ГЋГўГҐГ°Г«ГҐГї ГЁ Processor ---
     juce::AudioParameterFloat* lowMidCrossover{ nullptr };
     juce::AudioParameterFloat* midHighCrossover{ nullptr };
     // -----------------------------------------------
 
+     // --- Г„ГЋГЃГЂГ‚Г‹ГџГ…ГЊ ГЉГЋГЌГ‘Г’ГЂГЌГ’Г› Г€ ГЋГЃГљГ…ГЉГ’Г› Г„Г‹Гџ FFT ---
+    static constexpr int fftOrder = 11; // ГЏГ®Г°ГїГ¤Г®ГЄ FFT (11 => 2048)
+    static constexpr int fftSize = 1 << fftOrder; // ГђГ Г§Г¬ГҐГ° FFT
+
+    // --- Г„ГЋГЃГЂГ‚Г‹ГџГ…ГЊ ГЊГ…Г’ГЋГ„Г› Г„ГЋГ‘Г’Г“ГЏГЂ Г„Г‹Гџ ГЌГЋГ‚ГЋГѓГЋ ГЂГЌГЂГ‹Г€Г‡ГЂГ’ГЋГђГЂ ---
+    std::atomic<bool>& getIsFftDataReady() { return isFftDataReady; }
+    const std::array<float, fftSize>& getFftData() const { return fftInputData; } // Г„Г®Г±ГІГіГЇ ГЄ Г¤Г Г­Г­Г»Г¬
+    float getSampleRate() const { return lastSampleRate; } // Г‘ГІГ Г­Г¤Г Г°ГІГ­Г»Г© Г¬ГҐГІГ®Г¤
+    // ----------------------------------------------------
+
 private:
-    // --- ОСТАВЛЯЕМ ПРАВИЛЬНОЕ ОБЪЯВЛЕНИЕ APVTS ЗДЕСЬ ---
-    juce::ScopedPointer<juce::AudioProcessorValueTreeState> apvts;
+    // --- ГЋГ‘Г’ГЂГ‚Г‹ГџГ…ГЊ ГЏГђГЂГ‚Г€Г‹ГњГЌГЋГ… ГЋГЃГљГџГ‚Г‹Г…ГЌГ€Г… APVTS Г‡Г„Г…Г‘Гњ ---
+    std::unique_ptr<juce::AudioProcessorValueTreeState> apvts;
     // --------------------------------------------------
 
-    // --- Фильтры ---
+    // --- Г”ГЁГ«ГјГІГ°Г» ---
     using Filter = juce::dsp::LinkwitzRileyFilter<float>;
     Filter leftLowMidLPF, rightLowMidLPF;
-    Filter leftLowMidHPF, rightLowMidHPF;
+    //Filter leftLowMidHPF, rightLowMidHPF;
     Filter leftMidHighLPF, rightMidHighLPF;
-    Filter leftMidHighHPF, rightMidHighHPF;
+    //Filter leftMidHighHPF, rightMidHighHPF;
 
-    // --- Параметры панорамы ---
+    // --- ГЏГ Г°Г Г¬ГҐГІГ°Г» ГЇГ Г­Г®Г°Г Г¬Г» ---
     std::atomic<float> leftLowGain{ 1.f }, rightLowGain{ 1.f };
     std::atomic<float> leftMidGain{ 1.f }, rightMidGain{ 1.f };
     std::atomic<float> leftHighGain{ 1.f }, rightHighGain{ 1.f };
 
-    // --- Временные буферы ---
+    // --- Г‚Г°ГҐГ¬ГҐГ­Г­Г»ГҐ ГЎГіГґГҐГ°Г» ---
     juce::AudioBuffer<float> intermediateBuffer1;
     juce::AudioBuffer<float> lowBandBuffer;
     juce::AudioBuffer<float> midBandBuffer;
     juce::AudioBuffer<float> highBandBuffer;
 
+    // --- Г„ГЋГЃГЂГ‚Г‹ГџГ…ГЊ ГЋГЃГљГ…ГЉГ’Г› Г„Г‹Гџ FFT ---
+    juce::dsp::FFT forwardFFT;
+    juce::dsp::WindowingFunction<float> window;
+    // ГЊГ Г±Г±ГЁГў Г¤Г«Гї ГўГµГ®Г¤Г­Г»Гµ Г¤Г Г­Г­Г»Гµ FFT (ГЁГ±ГЇГ®Г«ГјГ§ГіГҐГ¬ ГЇГ®Г«Г®ГўГЁГ­Гі)
+    std::array<float, fftSize> fftInputData; // Г•Г°Г Г­ГЁГІ Г¬Г ГЈГ­ГЁГІГіГ¤Г» ГЇГ®Г±Г«ГҐ FFT
+    // ГЃГіГґГҐГ° Г¤Г«Гї ГЄГ®ГЇГЁГ°Г®ГўГ Г­ГЁГї Г±ГЅГ¬ГЇГ«Г®Гў ГЇГҐГ°ГҐГ¤ FFT
+    std::array<float, fftSize * 2> fftInternalBuffer; // ГЌГіГ¦ГҐГ­ Г¤Г«Гї performRealOnlyForwardTransform
+    std::atomic<bool> isFftDataReady{ false };
+    // -------------------------------
+
     float lastSampleRate = 44100.0f;
 
-    // --- Функции обновления ---
+    // --- Г”ГіГ­ГЄГ¶ГЁГЁ Г®ГЎГ­Г®ГўГ«ГҐГ­ГЁГї ---
     void updateParameters();
+
+    // --- Г„ГЋГЃГЂГ‚Г‹Г…ГЌГЋ: Г”ГіГ­ГЄГ¶ГЁГї Г®ГЎГ°Г ГЎГ®ГІГЄГЁ FFT ---
+    void processFFT(const juce::AudioBuffer<float>& inputBuffer);
+    // ---------------------------------------
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessor)
 };

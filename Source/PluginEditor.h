@@ -1,25 +1,52 @@
+// PluginEditor.h
 #pragma once
 
-#include "PluginProcessor.h" // Включает MBRPAudioProcessor
+#include "PluginProcessor.h"
 #include <JuceHeader.h>
 
-// --- ВКЛЮЧАЕМ КОМПОНЕНТЫ GUI ---
-// Убедись, что пути и пространства имен верны, и файлы скопированы
+// --- Р’РљР›Р®Р§РђР•Рњ РљРћРњРџРћРќР•РќРўР« GUI ---
 #include "GUI/BandSelectControls.h"
 #include "GUI/CustomButtons.h"
 #include "GUI/LookAndFeel.h"
 #include "GUI/RotarySliderWithLabels.h"
-#include "GUI/SpectrumAnalyzer.h"
-// -------------------------------
+#include "GUI/SpectrumAnalyzer/SpectrumAnalyzer.h" // РџСѓС‚СЊ Рє РќРћР’РћРњРЈ Р°РЅР°Р»РёР·Р°С‚РѕСЂСѓ
+// ---------------------------------------
 
-// --- ControlBar ---
+// --- ControlBar (РѕСЃС‚Р°РµС‚СЃСЏ) ---
 struct ControlBar : juce::Component
 {
     ControlBar();
     void resized() override;
-    AnalyzerButton analyzerButton; // Глобальное пространство имен
+    AnalyzerButton analyzerButton;
 };
 // ----------------
+
+// --- AnalyzerOverlay ---
+namespace MBRP_GUI
+{
+    struct AnalyzerOverlay : juce::Component, juce::Timer
+    {
+        AnalyzerOverlay(juce::AudioParameterFloat& lowXover,
+            juce::AudioParameterFloat& midXover);
+        void paint(juce::Graphics& g) override;
+        void timerCallback() override;
+        void resized() override;
+
+    private: // <-- РЈР±РµРґРёС‚РµСЃСЊ, С‡С‚Рѕ СЃРµРєС†РёСЏ private СЃСѓС‰РµСЃС‚РІСѓРµС‚
+        void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds);
+        juce::AudioParameterFloat& lowMidXoverParam;
+        juce::AudioParameterFloat& midHighXoverParam;
+
+        // --- Р”РћР‘РђР’Р›Р•РќРћ: РћР±СЉСЏРІР»РµРЅРёРµ РїРµСЂРµРјРµРЅРЅС‹С… СЃРѕСЃС‚РѕСЏРЅРёСЏ ---
+        float lastLowMidFreq;  // РҐСЂР°РЅРёС‚ РїРѕСЃР»РµРґРЅРµРµ Р·РЅР°С‡РµРЅРёРµ РґР»СЏ СЃСЂР°РІРЅРµРЅРёСЏ
+        float lastMidHighFreq; // РҐСЂР°РЅРёС‚ РїРѕСЃР»РµРґРЅРµРµ Р·РЅР°С‡РµРЅРёРµ РґР»СЏ СЃСЂР°РІРЅРµРЅРёСЏ
+        // -------------------------------------------------
+
+        juce::Rectangle<int> getAnalysisArea(juce::Rectangle<int> bounds) const;
+    };
+} // РєРѕРЅРµС† namespace MBRP_GUI
+// ---------------------------------
+
 
 //==============================================================================
 class MBRPAudioProcessorEditor : public juce::AudioProcessorEditor,
@@ -34,21 +61,19 @@ public:
     void timerCallback() override;
 
 private:
-    LookAndFeel lnf; // Глобальное пространство имен
+    LookAndFeel lnf;
     MBRPAudioProcessor& processorRef;
 
-    // --- Компоненты GUI ---
+    // --- РљРѕРјРїРѕРЅРµРЅС‚С‹ GUI ---
     ControlBar controlBar;
-    MBRP_GUI::SpectrumAnalyzer analyzer;
-    MBRP_GUI::AnalyzerOverlay analyzerOverlay;
+    SpectrumAnalyzer analyzer;
+    MBRP_GUI::AnalyzerOverlay analyzerOverlay; // РўРµРїРµСЂСЊ РёСЃРїРѕР»СЊР·СѓРµС‚ РѕР±СЉСЏРІР»РµРЅРёРµ РІС‹С€Рµ
     MBRP_GUI::BandSelectControls bandSelectControls;
     // ----------------------
 
-    // Контролы панорамы/кроссовера
+    // РљРѕРЅС‚СЂРѕР»С‹ РїР°РЅРѕСЂР°РјС‹/РєСЂРѕСЃСЃРѕРІРµСЂР° (РѕСЃС‚Р°СЋС‚СЃСЏ)
     juce::Slider lowMidCrossoverSlider, midHighCrossoverSlider;
     juce::Label lowMidCrossoverLabel, midHighCrossoverLabel;
-
-    // --- ИЗМЕНЕНО: Только один набор контролов панорамы ---
     RotarySliderWithLabels panSlider;
     juce::Label panLabel;
     // ---------------------------------------------------
@@ -56,16 +81,10 @@ private:
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
 
-    // Аттачменты для кроссоверов (остаются)
     SliderAttachment lowMidCrossoverAttachment, midHighCrossoverAttachment;
+    std::unique_ptr<SliderAttachment> panAttachment;
 
-    // --- ИЗМЕНЕНО: Только один аттачмент для панорамы (будет пересоздаваться) ---
-    std::unique_ptr<SliderAttachment> panAttachment; // Используем unique_ptr для легкого пересоздания
-    // ----------------------------------------------------------------------
-
-    // --- ДОБАВЛЕНО: Функция для обновления аттачмента панорамы ---
-    void updatePanAttachment(int bandIndex);
-    // ---------------------------------------------------------
+    void updatePanAttachment(int bandIndex); // РћСЃС‚Р°РµС‚СЃСЏ
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessorEditor)
 };

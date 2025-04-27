@@ -5,19 +5,16 @@
   <MAINGROUP id="UIw0zL" name="MBRP">
     <GROUP id="{240ADC6D-992C-2E44-53A0-FA4D2498D38F}" name="Source">
       <GROUP id="{A5234751-10F8-2D5A-BE0C-72AEF3C19321}" name="DSP">
-        <FILE id="kINrpz" name="CompressorBand.cpp" compile="1" resource="0"
-              file="Source/DSP/CompressorBand.cpp"/>
-        <FILE id="ZFbfKr" name="CompressorBand.h" compile="0" resource="0"
-              file="Source/DSP/CompressorBand.h"/>
-        <FILE id="IvrWbF" name="Fifo.h" compile="0" resource="0" file="Source/DSP/Fifo.h"/>
         <FILE id="o9QrbF" name="Params.cpp" compile="1" resource="0" file="Source/DSP/Params.cpp"/>
         <FILE id="Ie1xJ3" name="Params.h" compile="0" resource="0" file="Source/DSP/Params.h"/>
-        <FILE id="n178EN" name="SingleChannelSampleFifo.h" compile="0" resource="0"
-              file="Source/DSP/SingleChannelSampleFifo.h"/>
       </GROUP>
       <GROUP id="{21AFCF64-F6C6-CABB-BC52-86E6A41E2038}" name="GUI">
-        <FILE id="bc1HEL" name="AnalyzerPathGenerator.h" compile="0" resource="0"
-              file="Source/GUI/AnalyzerPathGenerator.h"/>
+        <GROUP id="{065ABFFC-94BF-E557-9A0F-73AA18175BA0}" name="SpectrumAnalyzer">
+          <FILE id="ndX2tO" name="SpectrumAnalyzer.cpp" compile="1" resource="0"
+                file="Source/GUI/SpectrumAnalyzer/SpectrumAnalyzer.cpp"/>
+          <FILE id="q9U9jd" name="SpectrumAnalyzer.h" compile="0" resource="0"
+                file="Source/GUI/SpectrumAnalyzer/SpectrumAnalyzer.h"/>
+        </GROUP>
         <FILE id="C8w3wb" name="BandSelectControls.cpp" compile="1" resource="0"
               file="Source/GUI/BandSelectControls.cpp"/>
         <FILE id="YkjwaY" name="BandSelectControls.h" compile="0" resource="0"
@@ -25,25 +22,16 @@
         <FILE id="ZsKl8F" name="CustomButtons.cpp" compile="1" resource="0"
               file="Source/GUI/CustomButtons.cpp"/>
         <FILE id="sHinSU" name="CustomButtons.h" compile="0" resource="0" file="Source/GUI/CustomButtons.h"/>
-        <FILE id="GQiYGb" name="FFTDataGenerator.h" compile="0" resource="0"
-              file="Source/GUI/FFTDataGenerator.h"/>
         <FILE id="ipRNJs" name="GlobalControls.cpp" compile="1" resource="0"
               file="Source/GUI/GlobalControls.cpp"/>
         <FILE id="NLkK1c" name="GlobalControls.h" compile="0" resource="0"
               file="Source/GUI/GlobalControls.h"/>
         <FILE id="cmBBP9" name="LookAndFeel.cpp" compile="1" resource="0" file="Source/GUI/LookAndFeel.cpp"/>
         <FILE id="gG0uJA" name="LookAndFeel.h" compile="0" resource="0" file="Source/GUI/LookAndFeel.h"/>
-        <FILE id="MgUlJB" name="PathProducer.cpp" compile="1" resource="0"
-              file="Source/GUI/PathProducer.cpp"/>
-        <FILE id="OVSyJt" name="PathProducer.h" compile="0" resource="0" file="Source/GUI/PathProducer.h"/>
         <FILE id="qs5rpZ" name="RotarySliderWithLabels.cpp" compile="1" resource="0"
               file="Source/GUI/RotarySliderWithLabels.cpp"/>
         <FILE id="k6eD2s" name="RotarySliderWithLabels.h" compile="0" resource="0"
               file="Source/GUI/RotarySliderWithLabels.h"/>
-        <FILE id="qbRdkj" name="SpectrumAnalyzer.cpp" compile="1" resource="0"
-              file="Source/GUI/SpectrumAnalyzer.cpp"/>
-        <FILE id="lRMVvW" name="SpectrumAnalyzer.h" compile="0" resource="0"
-              file="Source/GUI/SpectrumAnalyzer.h"/>
         <FILE id="WFdRCw" name="Utilities.cpp" compile="1" resource="0" file="Source/GUI/Utilities.cpp"/>
         <FILE id="aTMhkr" name="Utilities.h" compile="0" resource="0" file="Source/GUI/Utilities.h"/>
         <FILE id="lgzaJW" name="UtilityComponents.cpp" compile="1" resource="0"
@@ -51,18 +39,14 @@
         <FILE id="zt5AUr" name="UtilityComponents.h" compile="0" resource="0"
               file="Source/GUI/UtilityComponents.h"/>
       </GROUP>
-      <FILE id="qZFM41" name="PluginProcessor.cpp" compile="1" resource="0"
-            file="Source/PluginProcessor.cpp"/>
       <FILE id="ffUnQ0" name="PluginProcessor.h" compile="0" resource="0"
             file="Source/PluginProcessor.h"/>
       <FILE id="UGSj7y" name="PluginEditor.cpp" compile="1" resource="0"
             file="Source/PluginEditor.cpp"/>
       <FILE id="gEt8lI" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <FILE id="dqhOBb" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
     </GROUP>
-    <FILE id="bAhi2R" name="BandSelectControls.cpp" compile="1" resource="0"
-          file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/BandSelectControls.cpp"/>
-    <FILE id="XDvEOw" name="BandSelectControls.h" compile="0" resource="0"
-          file="../../../Desktop/&#1053;&#1086;&#1074;&#1072;&#1103; &#1087;&#1072;&#1087;&#1082;&#1072; (10)/Source/GUI/BandSelectControls.h"/>
   </MAINGROUP>
   <MODULES>
     <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
