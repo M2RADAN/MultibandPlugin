@@ -1,505 +1,572 @@
-#include "SpectrumAnalyzer.h"
+#include "SpectrumAnalyzer.h" // Включает PluginProcessor.h через себя
 #include <vector>
-#include <cmath>
-#include <algorithm>
-#include <limits>
-#include <juce_gui_basics/juce_gui_basics.h> // For TextLayout
+#include <cmath>      // Для std::log, std::exp, std::abs, std::max
+#include <limits>     // Не используется напрямую, но полезно для числовых пределов
+#include <algorithm>  // Для std::min, std::max, std::sort, std::unique
+#include <juce_gui_basics/juce_gui_basics.h> // Для TextLayout, Graphics и т.д.
+#include <juce_dsp/juce_dsp.h>             // Для Decibels
 
-// --- Helper function to get text width using TextLayout ---
-static float getTextLayoutWidth(const juce::String& text, const juce::Font& font)
+// Убедимся, что пространство имен из LookAndFeel доступно для цветов (если нужно)
+// #include "../LookAndFeel.h" // Раскомментируйте, если ColorScheme определен там
+
+// --- Пространство имен ---
+namespace MBRP_GUI
 {
-    juce::TextLayout textLayout;
-    juce::AttributedString attrString(text);
-    attrString.setFont(font);
-    textLayout.createLayout(attrString, 10000.0f); // Large width to get natural size
-    return textLayout.getWidth();
-}
-// ----------------------------------------------
 
-
-//==============================================================================
-SpectrumAnalyzer::SpectrumAnalyzer(MBRPAudioProcessor& p) :
-    audioProcessor(p),
-    // Initialize vector size based on processor's fftSize constant
-    displayData(size_t(MBRPAudioProcessor::fftSize / 2))
-{
-    peakDbLevel.store(minDb); // Initialize atomic peak level
-    // Fill initial spectrum data with minimum dB value
-    std::fill(displayData.begin(), displayData.end(), minDb);
-    // Start the timer for periodic updates
-    startTimerHz(30); // Update rate (e.g., 30 times per second)
-}
-
-SpectrumAnalyzer::~SpectrumAnalyzer()
-{
-    stopTimer(); // Stop the timer when the component is destroyed
-}
-
-void SpectrumAnalyzer::paint(juce::Graphics& g)
-{
-    using namespace juce;
-
-    // Get drawing area, slightly reduced from the component bounds
-    auto bounds = getLocalBounds().toFloat().reduced(5.f);
-
-    // Draw background, grid lines, and labels first
-    drawGrid(g, bounds);
-    // Draw the spectrum graph itself
-    drawSpectrum(g, bounds);
-    // Draw the frequency markers for the EQ/crossover bands on top
-    drawFrequencyMarkers(g, bounds);
-
-    // --- Draw Peak Level Readout ---
-    g.setColour(textColour); // Use the defined text colour
-    // Use FontOptions
-    auto peakFont = juce::Font(juce::FontOptions(12.0f));
-    g.setFont(peakFont);
-    // -----------------------------
-
-    // Atomically load the current peak value
-    float currentPeak = peakDbLevel.load();
-    // Format the text, showing "-inf" if below minDb
-    String peakText = "Peak: " + ((currentPeak <= minDb + 0.01f) // Add tolerance for float comparison
-        ? String("-inf dB") // Indicate units even for -inf
-        : String(currentPeak, 1) + " dB"); // 1 decimal place
-
-    // Define area for the peak text in the top-right corner relative to bounds
-    float peakTextAreaWidth = getTextLayoutWidth(peakText, peakFont) + 10.f; // Calculate width + padding
-    float peakTextAreaHeight = 15.f;
-    // Position using bounds coordinates
-    juce::Rectangle<float> peakTextArea(bounds.getRight() - peakTextAreaWidth,
-        bounds.getY(),
-        peakTextAreaWidth,
-        peakTextAreaHeight);
-
-    // Draw the text for the peak level readout
-    g.drawText(peakText,
-        peakTextArea.toNearestInt(), // Convert to int rect for drawing
-        Justification::centredRight, // Align text to the right
-        false);                      // Don't use ellipsis (...)
-    // ------------------------------------------
-}
-
-void SpectrumAnalyzer::resized()
-{
-    // Calculations dependent on size could be performed here if needed.
-    // For this implementation, calculations are done in paint().
-}
-
-void SpectrumAnalyzer::timerCallback()
-{
-    bool expected = true;
-    if (audioProcessor.getIsFftDataReady().compare_exchange_strong(expected, false))
+    // --- Хелпер для текста ---
+    // Определение статической функции-члена
+    /*static*/float SpectrumAnalyzer::getTextLayoutWidth(const juce::String& text, const juce::Font& font)
     {
-        auto& fftInputDataRef = audioProcessor.getFftData();
-        auto numBins = size_t(MBRPAudioProcessor::fftSize / 2);
-        std::vector<float> latestDbData(numBins);
+        juce::TextLayout textLayout;
+        juce::AttributedString attrString(text);
+        attrString.setFont(font);
+        textLayout.createLayout(attrString, 10000.0f); // Use a large width to get the natural width
+        return textLayout.getWidth();
+    }
 
-        if (displayData.size() != numBins)
-            displayData.resize(numBins);
+    //==============================================================================
+    // Конструктор
+    SpectrumAnalyzer::SpectrumAnalyzer(MBRPAudioProcessor& p) :
+        processor{ p },
+        // Инициализируем векторы с размером fftSize/2 и значением mindB
+        displayData(size_t(MBRPAudioProcessor::fftSize / 2), mindB),
+        peakHoldLevels(size_t(MBRPAudioProcessor::fftSize / 2), mindB),
+        fftPoints(MBRPAudioProcessor::fftSize) // Выделяем память для fftPoints (структура содержит int)
+    {
+        peakDbLevel.store(mindB);   // Инициализируем атомарный пик
+        avgInput.clear();           // Очищаем буферы усреднения
+        avgOutput.clear();
+        startTimerHz(60);           // Устанавливаем частоту таймера (например, 60 Гц)
+    }
 
-        const float normalizationFactor = 600.0f * 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize); // Ваш коэфф.
+    //==============================================================================
+    // Таймер - основной цикл обновления анализатора
+    void SpectrumAnalyzer::timerCallback()
+    {
+        bool newDataAvailable = processor.nextFFTBlockReady.load(); // Проверяем флаг из процессора
 
-        float currentFramePeak = minDb;
-
-        // 1. Вычисляем последние уровни дБ
-        for (size_t i = 0; i < numBins; ++i)
+        if (newDataAvailable)
         {
-            float magnitude = fftInputDataRef[i];
-            float normalizedMagnitude = magnitude * normalizationFactor;
-            latestDbData[i] = juce::Decibels::gainToDecibels(normalizedMagnitude, minDb);
-
-            if (latestDbData[i] > currentFramePeak)
-                currentFramePeak = latestDbData[i];
+            drawNextFrame(); // Обрабатываем новые данные FFT из FIFO
+            processor.nextFFTBlockReady.store(false); // Сбрасываем флаг
         }
-        peakDbLevel.store(currentFramePeak);
 
-        // 2. Обновляем отображаемые данные с использованием EMA
-        for (size_t i = 0; i < numBins; ++i)
+        // Обработка задержки после изменения размера
+        if (resizeDebounceInFrames > 0)
         {
-            float newVal = latestDbData[i];
-            float oldVal = displayData[i];
-
-            // --- Вариант 1: Разные коэффициенты атаки/затухания ---
-            float alpha = (newVal > oldVal) ? attackAlpha : releaseAlpha;
-           /* displayData[i] = alpha * newVal + (1.0f - alpha) * oldVal;*/
-
-            // --- Вариант 2: Один коэффициент сглаживания ---
-             displayData[i] = smoothingAlpha * newVal + (1.0f - smoothingAlpha) * oldVal;
-
-            // Убеждаемся, что не ушли ниже minDb (хотя EMA не должен этого делать при alpha > 0)
-            displayData[i] = std::max(minDb, displayData[i]);
+            --resizeDebounceInFrames;
+            if (resizeDebounceInFrames == 0) // Время пересчитать точки
+            {
+                recalculateFftPoints();
+                // Запросим перерисовку после пересчета, даже если не было новых данных
+                if (!newDataAvailable) repaint(); // Перерисовать, если новых данных не было, но ресайз закончился
+            }
+            // Пока идет ресайз/задержка, не обновляем пики и не перерисовываем активно
+            return;
         }
-        repaint(); // Перерисовываем с усредненными displayData
-    }
-    else // Если новых данных нет, старые значения НЕ меняются (нет затухания до нуля)
-    {
-        // В этом варианте с EMA затухание уже встроено.
-        // Если сигнал пропадает (newVal становится minDb), displayData будет
-        // экспоненциально стремиться к minDb с коэффициентом releaseAlpha (или smoothingAlpha).
-        // Ничего дополнительно делать не нужно, кроме, возможно, редкой перерисовки
-        // для анимации затухания, но timerCallback и так вызывается часто.
-    }
-}
 
-// --- Drawing Helper Functions ---
-
-void SpectrumAnalyzer::drawGrid(juce::Graphics& g, const juce::Rectangle<float>& bounds)
-{
-    using namespace juce;
-    
-    // Fill background
-    g.fillAll(Colours::black);
-    // Draw outer border (using original integer bounds might look sharper)
-    g.setColour(Colours::darkgrey);
-    g.drawRect(getLocalBounds(), 1.f); // Draw border around the whole component
-
-    // Get drawing area coordinates from the passed float bounds
-    auto width = bounds.getWidth();
-    auto top = bounds.getY();
-    auto bottom = bounds.getBottom();
-    auto left = bounds.getX();
-    auto right = bounds.getRight();
-
-    // --- Frequency Grid (Vertical Lines) ---
-    float freqs[] = { 20, 30, 40, 50, 60, 70, 80, 90, 100,
-                      200, 300, 400, 500, 600, 700, 800, 900, 1000,
-                      2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
-                      20000 };
-    g.setColour(gridLineColour);
-    for (float f : freqs)
-    {
-        float x = left + frequencyToX(f, width);
-        // Draw line only if it's within the horizontal bounds
-        if (x >= left && x <= right)
-            g.drawVerticalLine(roundToInt(x), top, bottom); // Use roundToInt for pixel line
-    }
-
-    // --- Frequency Labels ---
-    float labelFreqs[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
-    g.setColour(textColour);
-    // Use FontOptions
-    auto freqLabelFont = juce::Font(juce::FontOptions(10.f));
-    g.setFont(freqLabelFont);
-    // -----------------------------
-    for (float f : labelFreqs)
-    {
-        float x = left + frequencyToX(f, width);
-        // Format frequency string (use "k" for kHz)
-        String str = (f >= 1000.f) ? String(f / 1000.f, (f < 10000.f ? 1 : 0)) + "k" // More precise kHz formatting
-            : String(roundToInt(f));
-        // Use TextLayout to get width
-        float textW = getTextLayoutWidth(str, freqLabelFont);
-        // ----------------------------
-        Rectangle<float> r(0, 0, textW, 10.f);
-        r.setCentre(x, bottom + 7.f); // Position below the grid
-        r.setSize(textW, 10.f); // Высота метки
-
-        // --- ИЗМЕНЕНО: Позиционируем ВНУТРИ bounds ---
-        // Центрируем по X, Y - у самого нижнего края bounds (с небольшим отступом вверх)
-        r.setCentre(x, bottom - 5.f); // 5.f - половина высоты метки, для центрирования по вертикали у нижнего края
-
-        // Check horizontal bounds before drawing
-        if (r.getX() >= left - 2.f && r.getRight() <= right + 2.f) // Allow slight overlap
-            g.drawFittedText(str, r.toNearestInt(), Justification::centred, 1);
-    }
-
-    // --- Level Grid (Horizontal Lines) & Labels ---
-    // Define dB levels for grid lines
-    float dBs[] = { 30, 24, 18, 12, 6, 0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60, -72, -84, -96 }; // More steps
-    // Use FontOptions
-    auto dbGridLabelFont = juce::Font(juce::FontOptions(9.f));
-    g.setFont(dbGridLabelFont);
-    // -----------------------------
-
-    for (float db : dBs)
-    {
-        // Draw only if the level is within the displayable dB range
-        if (db >= minDb && db <= maxDb)
+        // Обновляем пики (применяем затухание), даже если не было новых данных FFT
+        bool peakNeedsRepaint = false;
+        for (size_t i = 0; i < peakHoldLevels.size(); ++i)
         {
-            // Map dB value to Y coordinate
-            float y = jmap(db, minDb, maxDb, bottom, top);
+            float oldPeakDb = peakHoldLevels[i];
+            // Затухаем пик, если он выше основной линии и выше порога mindB
+            if (oldPeakDb > displayData[i] && oldPeakDb > mindB + 0.01f)
+            {
+                peakHoldLevels[i] = std::max(displayData[i], juce::Decibels::gainToDecibels(juce::Decibels::decibelsToGain(oldPeakDb) * peakHoldDecayFactor, mindB));
+                if (!juce::approximatelyEqual(peakHoldLevels[i], oldPeakDb)) {
+                    peakNeedsRepaint = true; // Отмечаем, что пик изменился
+                }
+            }
+            else if (oldPeakDb > mindB + 0.01f && peakHoldLevels[i] < displayData[i]) {
+                // Если пик упал ниже основной линии, устанавливаем его равным основной линии
+                peakHoldLevels[i] = displayData[i];
+                if (!juce::approximatelyEqual(peakHoldLevels[i], oldPeakDb)) {
+                    peakNeedsRepaint = true;
+                }
+            }
+        }
 
-            // --- Draw Grid Line ---
-            // Make 0dB line slightly brighter/different color
-            g.setColour((std::abs(db) < 0.01f) ? zeroDbLineColour : gridLineColour);
-            g.drawHorizontalLine(roundToInt(y), left, right); // Use roundToInt
-
-            // --- Draw Label next to the Line (Right Side - subtle) ---
-            g.setColour(textColour.withAlpha(0.7f)); // Semi-transparent label
-            String str = String(roundToInt(db)); // Use roundToInt for label
-            if (db > 0.01f && !str.startsWithChar('+')) str = "+" + str; // Add "+" sign for positive values
-            // Use TextLayout to get width
-            float textW = getTextLayoutWidth(str, dbGridLabelFont);
-            // ----------------------------
-            // Define rectangle for the text label near the right edge
-            Rectangle<int> textBounds(roundToInt(right - textW - 4.f), // X position
-                roundToInt(y - 5.f),           // Y position (centered on line)
-                roundToInt(textW), 10);        // Width, Height
-            // Draw the text if it fits vertically within the grid area
-            if (textBounds.getBottom() < bottom + 5 && textBounds.getY() > top - 5) // Allow slight overlap
-                g.drawText(str, textBounds, Justification::centredRight);
+        // Перерисовываем, если были новые данные ИЛИ если изменились пики
+        if (newDataAvailable || peakNeedsRepaint) {
+            repaint();
         }
     }
 
-    // --- Level Labels (Left Side - Major Ticks) ---
-    g.setColour(textColour); // Reset color for major labels
-    // Use FontOptions
-    auto dbMajorLabelFont = juce::Font(juce::FontOptions(10.f));
-    g.setFont(dbMajorLabelFont);
-    // -----------------------------
-    // Show labels only for specific major ticks (e.g., min, max, 0, multiples of 12)
-    for (float db : dBs)
+
+    // --- Обработка следующего кадра данных из FIFO ---
+    // Адаптировано из witte::SpectrumAnalyzer::drawNextFrame
+    void SpectrumAnalyzer::drawNextFrame()
     {
-        bool isMajorTick = (db == maxDb || db == minDb || std::abs(db) < 0.01f || (juce::roundToInt(db) != 0 && juce::roundToInt(db) % 12 == 0));
-        if (db >= minDb && db <= maxDb && isMajorTick)
+        bool newDataProcessed = false; // Флаг для индикации обработки новых данных FFT
+
+        // --- Обработка входного FIFO ---
+        while (processor.abstractFifoInput.getNumReady() >= MBRPAudioProcessor::fftSize) // Обрабатываем все доступные блоки
         {
-            float y = jmap(db, minDb, maxDb, bottom, top);
-            String str = String(roundToInt(db)); // Use roundToInt
-            if (db > 0.01f && !str.startsWithChar('+')) str = "+" + str;
-            // Use TextLayout to get width
-            float textW = getTextLayoutWidth(str, dbMajorLabelFont);
-            // ----------------------------
-            Rectangle<float> r(0, 0, textW, 10.f);
-            r.setCentre(left - (textW / 2.f) - 4.f, y); // Position left of the grid, centered vertically
-            // Check vertical bounds before drawing
-            if (r.getY() >= top - 5.f && r.getBottom() <= bottom + 5.f) // Allow slight overlap
-                g.drawFittedText(str, r.toNearestInt(), Justification::centredRight, 1);
+            fftBufferInput.clear(); // Очищаем временный буфер для FFT
+            int start1, block1, start2, block2;
+            // Готовим FIFO к чтению
+            processor.abstractFifoInput.prepareToRead(MBRPAudioProcessor::fftSize, start1, block1, start2, block2);
+
+            // --- Копируем данные из FIFO процессора во временный буфер анализатора ---
+            const int audioFifoSize = processor.audioFifoInput.getNumSamples();
+            if (audioFifoSize > 0) { // Доп. проверка на размер буфера FIFO
+                if (block1 > 0) fftBufferInput.copyFrom(0, 0, processor.audioFifoInput.getReadPointer(0, start1 % audioFifoSize), block1);
+                if (block2 > 0) fftBufferInput.copyFrom(0, block1, processor.audioFifoInput.getReadPointer(0, start2 % audioFifoSize), block2);
+            }
+            // --- ---
+
+            // Сообщаем FIFO процессора, что мы прочитали данные
+            processor.abstractFifoInput.finishedRead(block1 + block2);
+
+            // Применяем окно Ханна
+            hannWindow.multiplyWithWindowingTable(fftBufferInput.getWritePointer(0), static_cast<size_t>(MBRPAudioProcessor::fftSize));
+            // Выполняем БПФ (только магнитуды)
+            fftInput.performFrequencyOnlyForwardTransform(fftBufferInput.getWritePointer(0));
+
+            // --- Усреднение результата FFT ---
+            {
+                juce::ScopedLock lockedForAvgUpdate(pathCreationLock);
+                // Вычитаем самый старый кадр из суммы (канал 0)
+                avgInput.addFrom(0, 0, avgInput.getReadPointer(avgInputPtr), avgInput.getNumSamples(), -1.0f);
+                // Нормализация для усреднения (делим на кол-во кадров)
+                float normFactor = 1.0f / (static_cast<float>(avgInput.getNumChannels() - 1));
+                avgInput.copyFrom(avgInputPtr, 0, fftBufferInput.getReadPointer(0), avgInput.getNumSamples(), normFactor);
+                // Добавляем новый нормализованный кадр к общей сумме (в канал 0)
+                avgInput.addFrom(0, 0, avgInput.getReadPointer(avgInputPtr), avgInput.getNumSamples());
+            }
+            // Передвигаем указатель на следующий слот усреднения
+            if (++avgInputPtr >= avgInput.getNumChannels()) avgInputPtr = 1;
+
+            newDataProcessed = true; // Отмечаем, что обработали новые данные
+        }
+
+        // --- Обработка выходного FIFO (Если используется) ---
+        // while (processor.abstractFifoOutput.getNumReady() >= MBRPAudioProcessor::fftSize) { /* ... */ }
+
+
+        // --- Обновление отображаемых данных, если были новые FFT ---
+        if (newDataProcessed)
+        {
+            auto numBins = avgInput.getNumSamples(); // fftSize / 2
+            std::vector<float> latestDbData(numBins); // Вектор для *текущих* dB
+
+            if (displayData.size() != numBins) displayData.resize(numBins);
+            if (peakHoldLevels.size() != numBins) peakHoldLevels.resize(numBins);
+
+            // Получаем указатель на усредненные магнитуды
+            const float* averagedMagnitudes = nullptr;
+            {
+                juce::ScopedLock lockedForAvgRead(pathCreationLock); // Блокировка на чтение
+                if (avgInput.getNumSamples() > 0) averagedMagnitudes = avgInput.getReadPointer(0);
+            }
+            if (averagedMagnitudes == nullptr) return; // Не удалось получить данные
+
+            // --- КОЭФФИЦИЕНТ УСИЛЕНИЯ (НАСТРОЙКА!) ---
+            const float gainAdjustment = -5.0f; // <-- НАСТРОЙТЕ ЭТО!
+            const float gainMultiplier = juce::Decibels::decibelsToGain(gainAdjustment);
+            // -------------------------------------------
+
+            float currentFramePeak = mindB;
+
+            // 1. Вычисляем уровни дБ из УСРЕДНЕННЫХ магнитуд
+            for (size_t i = 0; i < numBins; ++i)
+            {
+                float finalMagnitude = averagedMagnitudes[i] * gainMultiplier;
+                latestDbData[i] = juce::Decibels::gainToDecibels(finalMagnitude, mindB);
+                if (latestDbData[i] > currentFramePeak) currentFramePeak = latestDbData[i];
+            }
+            peakDbLevel.store(currentFramePeak); // Обновляем общий пик
+
+            // 2. Обновляем displayData (EMA) и peakHoldLevels (Decay)
+            for (size_t i = 0; i < numBins; ++i)
+            {
+                float newValDb = latestDbData[i];
+                float oldDisplayDb = displayData[i];
+                float oldPeakDb = peakHoldLevels[i];
+                // EMA
+                displayData[i] = smoothingAlpha * newValDb + (1.0f - smoothingAlpha) * oldDisplayDb;
+                displayData[i] = std::max(mindB, displayData[i]);
+                // Peak Hold
+                if (newValDb > oldPeakDb) peakHoldLevels[i] = newValDb;
+                else peakHoldLevels[i] = std::max(displayData[i], juce::Decibels::gainToDecibels(juce::Decibels::decibelsToGain(oldPeakDb) * peakHoldDecayFactor, mindB));
+            }
+            // Перерисовка будет вызвана из timerCallback после этого метода
         }
     }
-}
 
-void SpectrumAnalyzer::drawSpectrum(juce::Graphics& g, const juce::Rectangle<float>& bounds)
-{
-    using namespace juce;
-
-    auto width = bounds.getWidth();
-    auto top = bounds.getY();
-    auto bottom = bounds.getBottom();
-    auto left = bounds.getX();
-    auto right = bounds.getRight();
-    auto numBins = displayData.size();
-    auto sampleRate = audioProcessor.getSampleRate();
-
-    if (numBins == 0 || sampleRate <= 0 || width <= 0) return;
-
-    std::vector<Point<float>> points;
-    points.reserve(numBins);
-
-    // --- ИЗМЕНЕНИЕ: Начинаем рисовать со 2-го или 3-го бина ---
-    const int firstBinToDraw = 3; // Игнорируем бин 0 (DC) и бин 1
-
-    // Добавляем начальную точку внизу слева (или на уровне первого рисуемого бина)
-    if (firstBinToDraw < numBins)
+    //==============================================================================
+    // Пересчет точек FFT <-> Экран (адаптировано из witte)
+    void SpectrumAnalyzer::recalculateFftPoints()
     {
-        float firstFreq = static_cast<float>(firstBinToDraw) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-        if (firstFreq >= minFreq)
+        const auto bounds = getLocalBounds().toFloat();
+        const auto width = bounds.getWidth();
+        if (width <= 0) { fftPointsSize = 0; return; }
+
+        const auto sampleRate = static_cast<float> (processor.getSampleRate());
+        const auto fftSizeHalved = static_cast<int> (MBRPAudioProcessor::fftSize / 2);
+        if (sampleRate <= 0 || fftSizeHalved <= 0) { fftPointsSize = 0; return; } // Доп. проверки
+
+        const float minLogFreq = 20.0f;
+        const float maxLogFreq = sampleRate / 2.0f;
+        if (maxLogFreq <= minLogFreq) { fftPointsSize = 0; return; }
+        const float logRange = std::log(maxLogFreq / minLogFreq);
+
+        if (fftPoints.size() != MBRPAudioProcessor::fftSize) // Убедимся, что размер вектора достаточен
+            fftPoints.resize(MBRPAudioProcessor::fftSize);
+
+        fftPointsSize = 0;
+        int lastX = -1;
+
+        for (int i = 1; i < fftSizeHalved; ++i) // Начинаем с бина 1
         {
-            points.push_back({ left + frequencyToX(minFreq, width), bottom }); // Начинаем снизу
+            const float freq = sampleRate * static_cast<float>(i) / static_cast<float>(MBRPAudioProcessor::fftSize);
+            if (freq < minLogFreq) continue;
+
+            const float logPos = std::log(freq / minLogFreq) / logRange;
+            const int x = juce::roundToInt(logPos * width);
+
+            if (x >= width) break; // Вышли за пределы
+
+            if (x > lastX) // Новая точка на экране
+            {
+                if (fftPointsSize > 0) fftPoints[fftPointsSize - 1].lastBinIndex = i - 1;
+                if (fftPointsSize < (int)fftPoints.size()) {
+                    fftPoints[fftPointsSize].firstBinIndex = i;
+                    fftPoints[fftPointsSize].x = x;
+                    fftPointsSize++;
+                    lastX = x;
+                }
+                else { jassertfalse; break; } // Ошибка размера вектора
+            }
+            if (fftPointsSize > 0) fftPoints[fftPointsSize - 1].lastBinIndex = i; // Обновляем последний бин
         }
-        else // Если даже firstBinToDraw ниже minFreq, начинаем с left, bottom
-        {
-            points.push_back({ left, bottom });
+        if (fftPointsSize > 0) { // Ограничиваем последний индекс
+            fftPoints[fftPointsSize - 1].lastBinIndex = std::min(fftPoints[fftPointsSize - 1].lastBinIndex, fftSizeHalved - 1);
+        }
+        DBG("Recalculated FFT points. Count: " << fftPointsSize << " for width: " << width);
+    }
+
+    //==============================================================================
+    // Статическая функция получения уровня для точки экрана из усредненных магнитуд
+    /*static*/ float SpectrumAnalyzer::getFftPointLevel(const float* averagedMagnitudes, const fftPoint& point)
+    {
+        float maxMagnitude = 0.0f;
+        const int numSamples = MBRPAudioProcessor::fftSize / 2;
+
+        for (int i = point.firstBinIndex; i <= point.lastBinIndex; ++i) {
+            if (i >= 0 && i < numSamples) { // Проверка границ
+                if (averagedMagnitudes[i] > maxMagnitude) maxMagnitude = averagedMagnitudes[i];
+            }
+        }
+        // Усиление gainAdjustment применяется в drawNextFrame перед конвертацией в dB
+        return juce::Decibels::gainToDecibels(maxMagnitude, mindB); // Конвертируем в dB здесь? Или передавать dB?
+        // Если усиление в drawNextFrame, то здесь просто конвертация.
+        // НО: В drawNextFrame уже конвертировали в latestDbData!
+        // Значит, getFftPointLevel сейчас не нужна, если drawSpectrumAndPeaks
+        // будет работать с displayData/peakHoldLevels напрямую.
+        // ОСТАВИМ пока, но возможно, она не используется.
+    }
+
+    //==============================================================================
+    // Основная функция отрисовки
+    void SpectrumAnalyzer::paint(juce::Graphics& g)
+    {
+        using namespace juce;
+        g.fillAll(backgroundColour);
+        auto bounds = getLocalBounds().toFloat();
+        auto graphBounds = bounds.reduced(1.f);
+
+        // Пересчет точек, если окно было только что создано/изменено
+        if (fftPointsSize == 0 && getWidth() > 0) {
+            recalculateFftPoints();
+        }
+
+        drawFrequencyGrid(g, graphBounds);
+        drawGainScale(g, graphBounds);
+        drawSpectrumAndPeaks(g, graphBounds);
+        drawFrequencyMarkers(g, graphBounds);
+
+        g.setColour(peakTextColour);
+        auto peakFont = juce::Font(juce::FontOptions(12.0f)); g.setFont(peakFont);
+        float currentPeak = peakDbLevel.load();
+        String peakText = "Peak: " + ((currentPeak <= mindB + 0.01f) ? String("-inf dB") : String(currentPeak, 1) + " dB");
+        float peakTextAreaWidth = getTextLayoutWidth(peakText, peakFont) + 10.f; float peakTextAreaHeight = 15.f;
+        juce::Rectangle<float> peakTextArea(graphBounds.getRight() - peakTextAreaWidth, graphBounds.getY(), peakTextAreaWidth, peakTextAreaHeight);
+        g.drawText(peakText, peakTextArea.toNearestInt(), Justification::centredRight, false);
+
+        g.setColour(Colours::darkgrey);
+        g.drawRect(getLocalBounds(), 1.f);
+    }
+
+    //==============================================================================
+    void SpectrumAnalyzer::resized()
+    {
+        // Устанавливаем задержку пересчета точек, сам пересчет будет в timerCallback
+        static constexpr int framesToWaitBeforePaintingAfterResizing = 5;
+        resizeDebounceInFrames = framesToWaitBeforePaintingAfterResizing;
+        DBG("Resized called. Debounce set.");
+    }
+
+    //==============================================================================
+    // --- Функции отрисовки сеток и шкал ---
+    void SpectrumAnalyzer::drawFrequencyGrid(juce::Graphics& g, const juce::Rectangle<float>& bounds)
+    {
+        using namespace juce;
+        auto left = bounds.getX(); auto right = bounds.getRight();
+        auto top = bounds.getY(); auto bottom = bounds.getBottom();
+        auto width = bounds.getWidth();
+
+        float freqs[] = { 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
+                          2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000 };
+        g.setColour(gridLineColour);
+        for (float f : freqs) {
+            float x = left + frequencyToX(f, width);
+            if (x >= left && x <= right) g.drawVerticalLine(roundToInt(x), top, bottom);
+        }
+
+        float labelFreqs[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
+        g.setColour(gridTextColour);
+        auto freqLabelFont = juce::Font(juce::FontOptions(9.f)); g.setFont(freqLabelFont);
+        for (float f : labelFreqs) {
+            float x = left + frequencyToX(f, width);
+            String str = (f >= 1000.f) ? String(f / 1000.f, (f < 10000.f ? 1 : 0)) + "k" : String(roundToInt(f));
+            float textW = getTextLayoutWidth(str, freqLabelFont);
+            Rectangle<float> r(0, 0, textW, 10.f); r.setCentre(x, bottom - 5.f);
+            if (r.getX() >= left - 2.f && r.getRight() <= right + 2.f) g.drawFittedText(str, r.toNearestInt(), Justification::centred, 1);
         }
     }
-    else {
-        points.push_back({ left, bottom }); // Если бинов мало, начинаем снизу
+
+    void SpectrumAnalyzer::drawGainScale(juce::Graphics& g, const juce::Rectangle<float>& bounds)
+    {
+        using namespace juce;
+        auto left = bounds.getX(); auto right = bounds.getRight();
+        auto top = bounds.getY(); auto bottom = bounds.getBottom();
+
+        std::vector<float> levels; for (float db = maxdB; db >= mindB; db -= 6.0f) levels.push_back(db); levels.push_back(0.0f);
+        std::sort(levels.begin(), levels.end()); levels.erase(std::unique(levels.begin(), levels.end(), [](float a, float b) { return approximatelyEqual(a, b); }), levels.end());
+        auto labelFont = Font(FontOptions(9.f)); g.setFont(labelFont);
+
+        for (float db : levels) {
+            float y = jlimit(top, jmap(db, mindB, maxdB, bottom, top), bottom);
+            bool isZero = approximatelyEqual(db, 0.0f); bool isMajor = isZero || (roundToInt(db) != 0 && roundToInt(db) % 12 == 0);
+            g.setColour(isZero ? zeroDbLineColour : (isMajor ? gridLineColour.brighter(0.2f) : gridLineColour));
+            g.drawHorizontalLine(roundToInt(y), left, right);
+            if (isMajor || db == maxdB || db == mindB) {
+                g.setColour(gridTextColour); String str = String(roundToInt(db)); if (db > 0.01f && !str.startsWithChar('+')) str = "+" + str;
+                float textW = getTextLayoutWidth(str, labelFont);
+                g.drawText(str, roundToInt(left + 4.f), roundToInt(y - 5.f), roundToInt(textW), 10, Justification::centredLeft);
+                g.drawText(str, roundToInt(right - textW - 4.f), roundToInt(y - 5.f), roundToInt(textW), 10, Justification::centredRight);
+            }
+        }
     }
 
-
-    for (size_t i = firstBinToDraw; i < numBins; ++i) // <-- Начинаем с firstBinToDraw
+    // --- Функция отрисовки спектра и пиков ---
+    void SpectrumAnalyzer::drawSpectrumAndPeaks(juce::Graphics& g, const juce::Rectangle<float>& bounds)
     {
-        float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+        using namespace juce;
+        auto width = bounds.getWidth(); auto top = bounds.getY(); auto bottom = bounds.getBottom();
+        auto left = bounds.getX(); auto right = bounds.getRight();
+        auto numBins = displayData.size(); auto sampleRate = processor.getSampleRate();
+        if (numBins == 0 || peakHoldLevels.size() != numBins || sampleRate <= 0 || width <= 0) return;
 
-        if (freq >= minFreq && freq <= maxFreq)
+        std::vector<Point<float>> spectrumPoints; std::vector<Point<float>> peakPointsVec;
+        spectrumPoints.reserve(numBins); peakPointsVec.reserve(numBins);
+        const int firstBinToDraw = 2; const float lowFreqRollOffEndBin = 10.0f;
+
+        spectrumPoints.push_back({ left, bottom }); peakPointsVec.push_back({ left, bottom });
+
+        for (size_t i = firstBinToDraw; i < numBins; ++i) {
+            float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+            if (freq >= minFreq && freq <= maxFreq) {
+                float x = left + frequencyToX(freq, width); x = jlimit(left, right, x);
+                float displayDb = displayData[i]; float peakDb = peakHoldLevels[i];
+                float lowFreqAttenuation = 1.0f;
+                if (i < firstBinToDraw + lowFreqRollOffEndBin) {
+                    lowFreqAttenuation = jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.3f, 1.0f);
+                    displayDb = mindB + (displayDb - mindB) * lowFreqAttenuation;
+                    peakDb = mindB + (peakDb - mindB) * lowFreqAttenuation;
+                }
+                float yDisplay = jlimit(top, jmap(displayDb, mindB, maxdB, bottom, top), bottom);
+                float yPeak = jlimit(top, jmap(peakDb, mindB, maxdB, bottom, top), bottom);
+
+                spectrumPoints.push_back({ x, yDisplay });
+                // Оптимизация для пиковой линии (чтобы не было "лесенки" на вертикалях)
+                if (peakPointsVec.empty() || !juce::approximatelyEqual(x, peakPointsVec.back().x)) {
+                    peakPointsVec.push_back({ x, yPeak });
+                }
+                else {
+                    peakPointsVec.back().y = std::min(peakPointsVec.back().y, yPeak);
+                }
+            }
+            if (freq > maxFreq * 1.05) break;
+        }
+        spectrumPoints.push_back({ right, bottom }); peakPointsVec.push_back({ right, bottom });
+
+        if (spectrumPoints.size() < 2) return;
+
+        // Рисуем основную кривую (EMA) с cubicTo
+        Path spectrumPath; spectrumPath.startNewSubPath(spectrumPoints[0]);
+        for (size_t i = 1; i < spectrumPoints.size(); ++i) {
+            const auto& p0 = spectrumPoints[i - 1]; const auto& p1 = spectrumPoints[i];
+            Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y }, cp2{ (p0.x + p1.x) * 0.5f, p1.y };
+            spectrumPath.cubicTo(cp1, cp2, p1);
+        }
+        g.setColour(spectrumFillColour); g.fillPath(spectrumPath);
+        g.setColour(spectrumLineColour); g.strokePath(spectrumPath, PathStrokeType(1.5f));
+
+        // Рисуем пиковую кривую с lineTo
+        if (peakPointsVec.size() >= 2) {
+            Path peakPath; peakPath.startNewSubPath(peakPointsVec[0]);
+            for (size_t i = 1; i < peakPointsVec.size(); ++i) peakPath.lineTo(peakPointsVec[i]);
+            g.setColour(peakHoldLineColour); g.strokePath(peakPath, PathStrokeType(1.0f));
+        }
+
+        // Рисуем красную кривую > 0 дБ (для основной линии displayData, с cubicTo)
+        Path overZeroPath; bool pathStarted = false;
+        float zeroDbY = jlimit(top, jmap(0.0f, mindB, maxdB, bottom, top), bottom);
+        std::vector<Point<float>> pointsAboveZero;
+
+        for (size_t i = firstBinToDraw; i < numBins; ++i)
         {
+            float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+            if (freq < minFreq || freq > maxFreq) continue;
+
+            float originalDb = displayData[i]; // Исходное значение
+            float displayDb = originalDb; // Значение для отрисовки и проверки
             float x = left + frequencyToX(freq, width);
-            float dbValue = displayData[i];
-
-            // --- ИЗМЕНЕНИЕ: Небольшое ослабление первых нескольких бинов (визуальное) ---
-            // const float lowBinAttenuationFactor = 0.8f; // 0.0 до 1.0
-            // const int binsToAttenuate = 5;
-            // if (i < firstBinToDraw + binsToAttenuate) {
-            //     float factor = juce::jmap(float(i), float(firstBinToDraw -1), float(firstBinToDraw + binsToAttenuate), lowBinAttenuationFactor, 1.0f);
-            //     // Применяем ослабление к dB (не очень корректно, лучше к gain, но для визуала сойдет)
-            //     // Или проще: просто не рисуем самые первые, как сделано выше
-            // }
-            // --------------------------------------------------------------------
-
-            float y = jmap(dbValue, minDb, maxDb, bottom, top);
             x = jlimit(left, right, x);
-            y = jlimit(top, y, bottom);
-            points.push_back({ x, y }); // Добавляем каждую точку
-        }
-        if (freq > maxFreq * 1.05) break;
-    }
-    points.push_back({ right, bottom }); // Конечная точка
 
-    if (points.size() < 2) return;
+            // Применяем ослабление НЧ к значению для отрисовки/проверки
+            float lowFreqAttenuation = 1.0f;
+            if (i < firstBinToDraw + lowFreqRollOffEndBin) {
+                lowFreqAttenuation = juce::jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.3f, 1.0f);
+                displayDb = mindB + (originalDb - mindB) * lowFreqAttenuation;
+            }
 
-    // --- Рисуем основную кривую ---
-    Path spectrumPath;
-    spectrumPath.startNewSubPath(points[0]);
-    for (size_t i = 1; i < points.size(); ++i)
-    {
-        spectrumPath.lineTo(points[i]); // Рисуем прямые линии
-    }
-
-    // --- Заливка ---
-    ColourGradient fillGradient(spectrumLineColour.withAlpha(0.4f), left, bottom,
-        spectrumLineColour.darker(0.8f).withAlpha(0.1f), left, top, false);
-    g.setGradientFill(fillGradient);
-    g.fillPath(spectrumPath);
-
-    // --- Обводка ---
-    g.setColour(spectrumLineColour);
-    g.strokePath(spectrumPath, PathStrokeType(1.0f));
-
-    // --- Рисуем красную кривую > 0 дБ (логика остается прежней, но начало цикла тоже сдвинуто) ---
-    Path overZeroPath;
-    bool pathStarted = false;
-    float zeroDbY = jmap(0.0f, minDb, maxDb, bottom, top);
-    zeroDbY = jlimit(top, zeroDbY, bottom);
-    std::vector<Point<float>> pointsAboveZero;
-
-    for (size_t i = firstBinToDraw; i < numBins; ++i) // <-- Начинаем с firstBinToDraw
-    {
-        // ... (остальная логика отрисовки красной линии без изменений, она использует displayData[i]) ...
-        float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-        if (freq < minFreq || freq > maxFreq) continue; // Пропускаем частоты вне диапазона
-
-        float currentDb = displayData[i];
-        float x = left + frequencyToX(freq, width);
-        x = jlimit(left, right, x); // Ограничиваем X
-
-        if (currentDb >= 0.0f) // Если точка выше или на 0 дБ
-        {
-            float y = jmap(currentDb, minDb, maxDb, bottom, top);
-            y = jlimit(top, y, bottom); // Ограничиваем Y
-
-            if (!pathStarted) // Начинаем новый сегмент
+            // --- ИЗМЕНЕНО: Проверяем ОСЛАБЛЕННОЕ значение displayDb ---
+            if (displayDb >= 0.0f)
             {
-                // Ищем предыдущий бин (учитывая firstBinToDraw)
-                size_t prev_i = (i > firstBinToDraw) ? i - 1 : i; // Безопасный индекс
-                float prevDb = (i > firstBinToDraw) ? displayData[prev_i] : minDb;
+                // Маппим ослабленное значение в Y
+                float y = jlimit(top, jmap(displayDb, mindB, maxdB, bottom, top), bottom);
 
-                if (prevDb < 0.0f) // Если предыдущий был ниже 0
+                if (!pathStarted)
                 {
-                    float prevFreq = static_cast<float>(prev_i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-                    if (prevFreq >= minFreq) // Убедимся, что предыдущая частота валидна
+                    // --- Логика предыдущей точки ---
+                    // Здесь тоже нужно использовать ослабленное значение prevDisplayDb для консистентности
+                    size_t prev_i = (i > firstBinToDraw) ? i - 1 : i;
+                    float prevOriginalDb = (i > firstBinToDraw) ? displayData[prev_i] : mindB;
+                    float prevDisplayDb = prevOriginalDb; // Начинаем с оригинального
+                    // Ослабляем prevDb, если он в диапазоне
+                    if (prev_i >= firstBinToDraw && prev_i < firstBinToDraw + lowFreqRollOffEndBin) {
+                        float prevAttenuation = juce::jmap(float(prev_i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.3f, 1.0f);
+                        prevDisplayDb = mindB + (prevOriginalDb - mindB) * prevAttenuation;
+                    }
+                    // --- Конец ослабления prevDb ---
+
+                    if (prevDisplayDb < 0.0f) // Проверяем ОСЛАБЛЕННЫЙ предыдущий
                     {
-                        float prevX = left + frequencyToX(prevFreq, width);
-                        prevX = jlimit(left, right, prevX);
-                        pointsAboveZero.push_back({ prevX, zeroDbY }); // Добавляем точку пересечения
+                        float prevFreq = static_cast<float>(prev_i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
+                        if (prevFreq >= minFreq) {
+                            float prevX = jlimit(left, right, left + frequencyToX(prevFreq, width));
+                            pointsAboveZero.push_back({ prevX, zeroDbY });
+                        }
+                        else {
+                            pointsAboveZero.push_back({ left, zeroDbY });
+                        }
                     }
-                    else { // Если предыдущая частота невалидна, начинаем с левого края на 0 дБ
-                        pointsAboveZero.push_back({ left, zeroDbY });
-                    }
+                    pointsAboveZero.push_back({ x, y });
+                    pathStarted = true;
                 }
-                pointsAboveZero.push_back({ x, y }); // Добавляем текущую точку
-                pathStarted = true;
-            }
-            else // Продолжаем сегмент
-            {
-                pointsAboveZero.push_back({ x, y });
-            }
-        }
-        else // Точка ниже 0 дБ
-        {
-            if (pathStarted) // Заканчиваем сегмент
-            {
-                pointsAboveZero.push_back({ x, zeroDbY }); // Заканчиваем на 0 дБ
-                if (pointsAboveZero.size() >= 2)
+                else // Продолжаем сегмент
                 {
-                    overZeroPath.startNewSubPath(pointsAboveZero[0]);
-                    for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
-                    {
-                        overZeroPath.lineTo(pointsAboveZero[p_idx]);
-                    }
-                    g.setColour(overZeroDbColour);
-                    g.strokePath(overZeroPath, PathStrokeType(1.0f));
+                    pointsAboveZero.push_back({ x, y });
                 }
-                overZeroPath.clear();
-                pointsAboveZero.clear();
-                pathStarted = false;
             }
-        }
-    }
-    // Закрываем последний сегмент, если нужно
-    if (pathStarted && pointsAboveZero.size() >= 2)
-    {
-        // Можно добавить конечную точку на right, zeroDbY
-        // pointsAboveZero.push_back({ right, zeroDbY });
-        overZeroPath.startNewSubPath(pointsAboveZero[0]);
-        for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
-        {
-            overZeroPath.lineTo(pointsAboveZero[p_idx]);
-        }
-        g.setColour(overZeroDbColour);
-        g.strokePath(overZeroPath, PathStrokeType(1.0f));
-    }
-}
-
-
-void SpectrumAnalyzer::drawFrequencyMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds)
-{
-    using namespace juce;
-    auto width = bounds.getWidth();
-    auto top = bounds.getY();
-    auto bottom = bounds.getBottom();
-    auto left = bounds.getX();
-    auto right = bounds.getRight();
-
-    // Get crossover frequencies directly from processor parameters (check for nullptrs)
-    float lowFreq = audioProcessor.lowMidCrossover ? audioProcessor.lowMidCrossover->get() : 20.0f; // Default if null
-    float highFreq = audioProcessor.midHighCrossover ? audioProcessor.midHighCrossover->get() : 20000.0f; // Default if null
-    // float midFreq = ... // Mid frequency isn't directly a parameter here
-
-    // Define colors for markers
-    Colour lowColour = Colours::orange;
-    // Colour midColour = Colours::lightgreen; // No mid marker in this version
-    Colour highColour = Colours::cyan;
-
-    // Lambda to draw a single marker line and dot
-    auto drawMarker = [&](float freq, Colour colour)
-        {
-            float x = left + frequencyToX(freq, width); // Map frequency to X
-            // Draw only if within bounds
-            if (x >= left && x <= right)
+            else // Ослабленное значение НИЖЕ 0 дБ
             {
-                // Draw vertical line
-                g.setColour(colour.withAlpha(0.7f));
-                g.drawVerticalLine(roundToInt(x), top, bottom); // Use roundToInt
-                // Draw dot at the top
-                g.setColour(colour);
-                g.fillEllipse(x - 2.f, top - 2.f, 4.f, 4.f); // Center dot slightly above top line maybe?
+                if (pathStarted) // Заканчиваем сегмент
+                {
+                    pointsAboveZero.push_back({ x, zeroDbY });
+                    if (pointsAboveZero.size() >= 2)
+                    {
+                        // Строим и рисуем overZeroPath как раньше
+                        overZeroPath.startNewSubPath(pointsAboveZero[0]);
+                        for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx) {
+                            // Строим путь для сегмента с cubicTo
+                            overZeroPath.startNewSubPath(pointsAboveZero[0]);
+                            for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
+                            {
+                                const auto& p0 = pointsAboveZero[p_idx - 1];
+                                const auto& p1 = pointsAboveZero[p_idx];
+                                // Рассчитываем контрольные точки для плавного перехода
+                                juce::Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y };
+                                juce::Point<float> cp2{ (p0.x + p1.x) * 0.5f, p1.y };
+                                overZeroPath.cubicTo(cp1, cp2, p1);
+                            }
+                            // Рисуем путь
+                            g.setColour(overZeroDbLineColour); // Красный цвет
+                            g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
+                        }
+                        g.setColour(overZeroDbLineColour);
+                        g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
+                    }
+                    overZeroPath.clear(); pointsAboveZero.clear(); pathStarted = false;
+                }
             }
-        };
+        }
+        // Закрываем последний сегмент
+        if (pathStarted && pointsAboveZero.size() >= 2)
+        {
+            // Строим и рисуем overZeroPath как раньше
+            overZeroPath.startNewSubPath(pointsAboveZero[0]);
+            for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx) {
+                overZeroPath.startNewSubPath(pointsAboveZero[0]);
+                for (size_t p_idx = 1; p_idx < pointsAboveZero.size(); ++p_idx)
+                {
+                    const auto& p0 = pointsAboveZero[p_idx - 1];
+                    const auto& p1 = pointsAboveZero[p_idx];
+                    // Рассчитываем контрольные точки
+                    juce::Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y };
+                    juce::Point<float> cp2{ (p0.x + p1.x) * 0.5f, p1.y };
+                    overZeroPath.cubicTo(cp1, cp2, p1);
+                }
+                // Рисуем путь
+                g.setColour(overZeroDbLineColour); // Красный цвет
+                g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
+            }
+            g.setColour(overZeroDbLineColour);
+            g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
+        }
+    }
 
-    // Draw markers for the low and high crossover frequencies
-    drawMarker(lowFreq, lowColour);
-    // drawMarker(midFreq, midColour); // No mid marker
-    drawMarker(highFreq, highColour);
-}
+    // --- Отрисовка маркеров кроссовера ---
+    void SpectrumAnalyzer::drawFrequencyMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds)
+    {
+        using namespace juce;
+        auto width = bounds.getWidth(); auto top = bounds.getY(); auto bottom = bounds.getBottom();
+        auto left = bounds.getX(); auto right = bounds.getRight();
 
+        float lowFreq = processor.lowMidCrossover ? processor.lowMidCrossover->get() : 20.0f;
+        float highFreq = processor.midHighCrossover ? processor.midHighCrossover->get() : 20000.0f;
+        Colour lowColour = Colours::orange; Colour highColour = Colours::cyan;
 
-float SpectrumAnalyzer::frequencyToX(float freq, float width) const
-{
-    // Clamp frequency to the displayable range
-    freq = juce::jlimit(minFreq, maxFreq, freq);
-    // Handle edge cases to avoid issues with log
-    if (maxFreq / minFreq <= 1.0f || freq <= 0 || width <= 0) return 0.0f;
-    // Logarithmic mapping: log(f / min) / log(max / min) gives position [0, 1]
-    return width * (std::log(freq / minFreq) / std::log(maxFreq / minFreq));
-}
+        auto drawMarker = [&](float freq, Colour colour) {
+            float x = left + frequencyToX(freq, width);
+            if (x >= left && x <= right) {
+                g.setColour(colour.withAlpha(0.7f)); g.drawVerticalLine(roundToInt(x), top, bottom);
+                g.setColour(colour); g.fillEllipse(x - 2.f, top, 4.f, 4.f);
+            }
+            };
+        drawMarker(lowFreq, lowColour); drawMarker(highFreq, highColour);
+    }
 
+    // --- Преобразование частоты в X ---
+    float SpectrumAnalyzer::frequencyToX(float freq, float width) const
+    {
+        freq = juce::jlimit(minFreq, maxFreq, freq);
+        if (maxFreq / minFreq <= 1.0f || freq <= 0 || width <= 0) return 0.0f;
+        return width * (std::log(freq / minFreq) / std::log(maxFreq / minFreq));
+    }
 
-float SpectrumAnalyzer::xToFrequency(float x, float width) const
-{
-    // Clamp x coordinate within the width
-    x = juce::jlimit(0.0f, width, x);
-    // Handle edge cases
-    if (maxFreq / minFreq <= 1.0f || width <= 0.0f) return minFreq;
-    // Inverse logarithmic mapping: min * exp((x / width) * log(max / min))
-    return minFreq * std::exp((x / width) * std::log(maxFreq / minFreq));
-}
+} // namespace MBRP_GUI
