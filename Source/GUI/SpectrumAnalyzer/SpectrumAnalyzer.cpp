@@ -163,7 +163,7 @@ namespace MBRP_GUI
             if (averagedMagnitudes == nullptr) return; // Íå óäàëîñü ïîëó÷èòü äàííûå
 
             // --- ÊÎİÔÔÈÖÈÅÍÒ ÓÑÈËÅÍÈß (ÍÀÑÒĞÎÉÊÀ!) ---
-            const float gainAdjustment = -55.0f; // <-- ÍÀÑÒĞÎÉÒÅ İÒÎ!
+            const float gainAdjustment = -5.0f; // <-- ÍÀÑÒĞÎÉÒÅ İÒÎ!
             const float gainMultiplier = juce::Decibels::decibelsToGain(gainAdjustment);
             // -------------------------------------------
 
