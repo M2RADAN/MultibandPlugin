@@ -4,13 +4,12 @@
 #include <JuceHeader.h>
 
 // Включаем компоненты GUI
-#include "GUI/BandSelectControls.h"
-#include "GUI/CustomButtons.h"
-#include "GUI/LookAndFeel.h"
-#include "GUI/RotarySliderWithLabels.h"
-// Путь к НОВОМУ анализатору
-#include "GUI/SpectrumAnalyzer/SpectrumAnalyzer.h"
-
+#include "GUI/LookAndFeel.h"         // LookAndFeel используется редактором
+#include "GUI/CustomButtons.h"       // Используется в ControlBar
+#include "GUI/BandSelectControls.h"  // Член редактора
+#include "GUI/RotarySliderWithLabels.h"// Член редактора
+#include "GUI/SpectrumAnalyzer/SpectrumAnalyzer.h" // Член редактора
+#include "GUI/AnalyzerOverlay/AnalyzerOverlay.h"    // Член редактора <-- ВКЛЮЧАЕМ ЗДЕСЬ
 // ControlBar
 struct ControlBar : juce::Component
 {
@@ -20,26 +19,25 @@ struct ControlBar : juce::Component
 };
 
 // AnalyzerOverlay
-namespace MBRP_GUI
-{
-    struct AnalyzerOverlay : juce::Component, juce::Timer
-    {
-        AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover);
-        void paint(juce::Graphics& g) override;
-        void timerCallback() override;
-        void resized() override;
-
-    private:
-        void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds);
-        juce::AudioParameterFloat& lowMidXoverParam;
-        juce::AudioParameterFloat& midHighXoverParam;
-        float lastLowMidFreq;
-        float lastMidHighFreq;
-        juce::Rectangle<int> getAnalysisArea(juce::Rectangle<int> bounds) const;
-    };
-} // namespace MBRP_GUI
-
-//==============================================================================
+//namespace MBRP_GUI
+//{
+//    struct AnalyzerOverlay : juce::Component, juce::Timer
+//    {
+//        AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover);
+//        void paint(juce::Graphics& g) override;
+//        void timerCallback() override;
+//        void resized() override;
+//
+//    private:
+//        void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds);
+//        juce::AudioParameterFloat& lowMidXoverParam;
+//        juce::AudioParameterFloat& midHighXoverParam;
+//        float lastLowMidFreq;
+//        float lastMidHighFreq;
+//    };
+//} // namespace MBRP_GUI
+//
+////==============================================================================
 class MBRPAudioProcessorEditor : public juce::AudioProcessorEditor,
     public juce::Timer
 {

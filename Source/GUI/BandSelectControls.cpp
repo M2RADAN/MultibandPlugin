@@ -1,5 +1,5 @@
 #include "BandSelectControls.h"
-#include "Utilities.h" // Для drawModuleBackground и mapX/mapY, если нужны
+// #include "Utilities.h" // Не используется здесь напрямую
 
 namespace MBRP_GUI
 {
@@ -7,80 +7,95 @@ namespace MBRP_GUI
     BandSelectControls::BandSelectControls()
     {
         // Лямбда для настройки кнопок выбора полосы
-        auto setupBandButton = [&](juce::ToggleButton& button, const juce::String& name, juce::Colour /*color*/) // Цвет пока не используем напрямую
+        auto setupBandButton = [&](juce::ToggleButton& button, const juce::String& name)
             {
                 button.setName(name);
-                button.setButtonText(name); // Устанавливаем текст кнопки
-                // Используем стандартный LookAndFeel для ToggleButton, который мы настроим в LookAndFeel.cpp
-                // (стилизация будет применена через LookAndFeel::drawToggleButton)
-                button.setRadioGroupId(1); // Объединяем в группу радио-кнопок
-                button.setClickingTogglesState(true); // Переключать состояние по клику
+                button.setButtonText(name);
+                // Используем LookAndFeel, который применит стили
+                button.setRadioGroupId(1); // Объединяем в группу
+                button.setClickingTogglesState(true); // Переключать по клику
                 button.onClick = [this, &button]() { bandButtonClicked(&button); }; // Обработчик клика
                 addAndMakeVisible(button);
             };
 
         // Настраиваем кнопки
-        setupBandButton(lowBandButton, "Low", juce::Colours::orange); // Цвет передается, но не используется напрямую здесь
-        setupBandButton(midBandButton, "Mid", juce::Colours::lightgreen);
-        setupBandButton(highBandButton, "High", juce::Colours::cyan);
+        setupBandButton(lowBandButton, "Low");
+        setupBandButton(midBandButton, "Mid");
+        setupBandButton(highBandButton, "High");
 
         // Выбираем "Low" по умолчанию
         lowBandButton.setToggleState(true, juce::NotificationType::dontSendNotification);
-        activeBandButton = &lowBandButton; // Устанавливаем активную кнопку
+        activeBandButton = &lowBandButton;
     }
 
     void BandSelectControls::resized()
     {
-        auto bounds = getLocalBounds().reduced(5); // Небольшой отступ
+        auto bounds = getLocalBounds().reduced(5);
         juce::FlexBox flexBox;
-        flexBox.flexDirection = juce::FlexBox::Direction::row; // Располагаем в ряд
-        flexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround; // Распределяем равномерн
-        flexBox.alignItems = juce::FlexBox::AlignItems::stretch; // Растягиваем по высоте
+        flexBox.flexDirection = juce::FlexBox::Direction::row;
+        flexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround;
+        flexBox.alignItems = juce::FlexBox::AlignItems::stretch;
 
-        // Добавляем кнопки во FlexBox
         flexBox.items.add(juce::FlexItem(lowBandButton).withFlex(1.0f));
         flexBox.items.add(juce::FlexItem(midBandButton).withFlex(1.0f));
         flexBox.items.add(juce::FlexItem(highBandButton).withFlex(1.0f));
 
-        // Применяем макет
         flexBox.performLayout(bounds);
     }
 
     void BandSelectControls::paint(juce::Graphics& g)
     {
-        // Опционально: рисуем фон модуля, если нужно
-        // MBRP_GUI::drawModuleBackground(g, getLocalBounds());
-        g.fillAll(juce::Colours::transparentBlack); // Прозрачный фон по умолчанию
+        // Можно оставить пустым или нарисовать фон, если нужно
+        g.fillAll(juce::Colours::transparentBlack);
     }
 
     // Обработчик кликов по кнопкам выбора полосы
     void BandSelectControls::bandButtonClicked(juce::Button* button)
     {
-        // Определяем индекс выбранной полосы
         int bandIndex = -1;
-        if (button == &lowBandButton)
-        {
-            bandIndex = 0;
-            activeBandButton = &lowBandButton;
-        }
-        else if (button == &midBandButton)
-        {
-            bandIndex = 1;
-            activeBandButton = &midBandButton;
-        }
-        else if (button == &highBandButton)
-        {
-            bandIndex = 2;
-            activeBandButton = &highBandButton;
-        }
+        if (button == &lowBandButton) { bandIndex = 0; activeBandButton = &lowBandButton; }
+        else if (button == &midBandButton) { bandIndex = 1; activeBandButton = &midBandButton; }
+        else if (button == &highBandButton) { bandIndex = 2; activeBandButton = &highBandButton; }
 
-        // Если есть подписчик (редактор) и индекс корректен, уведомляем его
+        // Уведомляем подписчика (редактор) ТОЛЬКО при реальном клике
         if (bandIndex != -1 && onBandSelected)
         {
             onBandSelected(bandIndex);
         }
-        // Перерисовываем, чтобы LookAndFeel обновил вид кнопок
+        // Перерисовываем для обновления вида кнопок LookAndFeel'ом
         repaint();
     }
+
+    // --- ДОБАВЛЕНО: Реализация setSelectedBand ---
+    // Этот метод вызывается извне (из редактора), чтобы программно
+    // выбрать нужную кнопку, например, после клика на анализаторе.
+    void BandSelectControls::setSelectedBand(int bandIndex)
+    {
+        juce::ToggleButton* buttonToSelect = nullptr;
+        switch (bandIndex)
+        {
+        case 0: buttonToSelect = &lowBandButton; break;
+        case 1: buttonToSelect = &midBandButton; break;
+        case 2: buttonToSelect = &highBandButton; break;
+        default: return; // Неверный индекс, ничего не делаем
+        }
+
+        // Меняем состояние, только если выбрана другая кнопка
+        if (buttonToSelect != nullptr && buttonToSelect != activeBandButton)
+        {
+            // Устанавливаем состояние новой кнопки БЕЗ вызова onClick
+            // и БЕЗ отправки уведомлений слушателям этой кнопки
+            buttonToSelect->setToggleState(true, juce::NotificationType::dontSendNotification);
+
+            // activeBandButton обновится автоматически, так как setToggleState(true)
+            // внутри радио-группы сбросит состояние других кнопок.
+            // Но для надежности можно обновить и вручную:
+            activeBandButton = buttonToSelect;
+
+            // Перерисовываем компонент, чтобы LookAndFeel обновил вид кнопок
+            repaint();
+        }
+    }
+    // -------------------------------------------
 
 } // Конец namespace MBRP_GUI

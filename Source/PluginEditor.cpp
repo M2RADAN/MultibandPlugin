@@ -11,87 +11,87 @@ void ControlBar::resized() {
 }
 // ---------------------------
 
-// --- AnalyzerOverlay Implementation ---
-namespace MBRP_GUI
-{
-    AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover) :
-        lowMidXoverParam(lowXover), midHighXoverParam(midXover),
-        lastLowMidFreq(lowXover.get() + 1.f), lastMidHighFreq(midXover.get() + 1.f)
-    {
-        setInterceptsMouseClicks(false, false);
-        startTimerHz(30);
-    }
-
-    void AnalyzerOverlay::paint(juce::Graphics& g) {
-        drawCrossoverLines(g, getLocalBounds());
-    }
-
-    void AnalyzerOverlay::timerCallback() {
-        float currentLowMid = lowMidXoverParam.get();
-        float currentMidHigh = midHighXoverParam.get();
-        if (!juce::approximatelyEqual(currentLowMid, lastLowMidFreq) || !juce::approximatelyEqual(currentMidHigh, lastMidHighFreq)) {
-            lastLowMidFreq = currentLowMid;
-            lastMidHighFreq = currentMidHigh;
-            repaint();
-        }
-    }
-
-    void AnalyzerOverlay::resized() { repaint(); }
-
-    juce::Rectangle<int> AnalyzerOverlay::getAnalysisArea(juce::Rectangle<int> bounds) const {
-        bounds.reduce(1, 5); // Óìåíüøàåì îòñòóïû êàê â SpectrumAnalyzer::drawGrid
-        return bounds;
-    }
-
-    template<typename FloatType>
-    static FloatType mapFreqToXLog(FloatType freq, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
-        freq = juce::jlimit(minF, maxF, freq);
-        if (maxF / minF <= 1.0f || freq <= 0) return left;
-        return left + width * (std::log(freq / minF) / std::log(maxF / minF));
-    }
-
-    void AnalyzerOverlay::drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds) {
-        using namespace juce;
-        auto analysisArea = getAnalysisArea(bounds).toFloat();
-        const float top = analysisArea.getY();
-        const float bottom = analysisArea.getBottom();
-        const float left = analysisArea.getX();
-        const float width = analysisArea.getWidth();
-        const float right = analysisArea.getRight();
-        const float minLogFreq = 20.0f;
-        const float maxLogFreq = 20000.0f; // Èëè processorRef.getSampleRate() / 2.0f;
-
-        float lowMidFreq = lowMidXoverParam.get();
-        float midHighFreq = midHighXoverParam.get();
-        float lowMidX = mapFreqToXLog(lowMidFreq, left, width, minLogFreq, maxLogFreq);
-        float midHighX = mapFreqToXLog(midHighFreq, left, width, minLogFreq, maxLogFreq);
-
-        g.setColour(Colours::orange.withAlpha(0.7f)); // Öâåò äëÿ Low/Mid ëèíèè
-        if (lowMidX >= left && lowMidX <= right) g.drawVerticalLine(roundToInt(lowMidX), top, bottom);
-
-        g.setColour(Colours::cyan.withAlpha(0.7f)); // Öâåò äëÿ Mid/High ëèíèè
-        if (midHighX >= left && midHighX <= right) g.drawVerticalLine(roundToInt(midHighX), top, bottom);
-
-        // Äîáàâëÿåì òî÷êè íà ëèíèÿõ êðîññîâåðà
-        g.setColour(Colours::orange);
-        if (lowMidX >= left && lowMidX <= right) g.fillEllipse(lowMidX - 2.f, top, 4.f, 4.f);
-        g.setColour(Colours::cyan);
-        if (midHighX >= left && midHighX <= right) g.fillEllipse(midHighX - 2.f, top, 4.f, 4.f);
-    }
-} // End namespace MBRP_GUI
+//// --- AnalyzerOverlay Implementation ---
+//namespace MBRP_GUI
+//{
+//    AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover) :
+//        lowMidXoverParam(lowXover), midHighXoverParam(midXover),
+//        lastLowMidFreq(lowXover.get() + 1.f), lastMidHighFreq(midXover.get() + 1.f)
+//    {
+//        setInterceptsMouseClicks(false, false);
+//        startTimerHz(30);
+//    }
+//
+//    void AnalyzerOverlay::paint(juce::Graphics& g) {
+//        drawCrossoverLines(g, getLocalBounds());
+//    }
+//
+//    void AnalyzerOverlay::timerCallback() {
+//        float currentLowMid = lowMidXoverParam.get();
+//        float currentMidHigh = midHighXoverParam.get();
+//        if (!juce::approximatelyEqual(currentLowMid, lastLowMidFreq) || !juce::approximatelyEqual(currentMidHigh, lastMidHighFreq)) {
+//            lastLowMidFreq = currentLowMid;
+//            lastMidHighFreq = currentMidHigh;
+//            repaint();
+//        }
+//    }
+//
+//    void AnalyzerOverlay::resized() { repaint(); }
+//
+//    juce::Rectangle<int> AnalyzerOverlay::getAnalysisArea(juce::Rectangle<int> bounds) const {
+//        bounds.reduce(1, 5); // Ã“Ã¬Ã¥Ã­Ã¼Ã¸Ã Ã¥Ã¬ Ã®Ã²Ã±Ã²Ã³Ã¯Ã» ÃªÃ Ãª Ã¢ SpectrumAnalyzer::drawGrid
+//        return bounds;
+//    }
+//
+//    template<typename FloatType>
+//    static FloatType mapFreqToXLog(FloatType freq, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
+//        freq = juce::jlimit(minF, maxF, freq);
+//        if (maxF / minF <= 1.0f || freq <= 0) return left;
+//        return left + width * (std::log(freq / minF) / std::log(maxF / minF));
+//    }
+//
+//    void AnalyzerOverlay::drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds) {
+//        using namespace juce;
+//        auto analysisArea = getAnalysisArea(bounds).toFloat();
+//        const float top = analysisArea.getY();
+//        const float bottom = analysisArea.getBottom();
+//        const float left = analysisArea.getX();
+//        const float width = analysisArea.getWidth();
+//        const float right = analysisArea.getRight();
+//        const float minLogFreq = 20.0f;
+//        const float maxLogFreq = 20000.0f; // ÃˆÃ«Ã¨ processorRef.getSampleRate() / 2.0f;
+//
+//        float lowMidFreq = lowMidXoverParam.get();
+//        float midHighFreq = midHighXoverParam.get();
+//        float lowMidX = mapFreqToXLog(lowMidFreq, left, width, minLogFreq, maxLogFreq);
+//        float midHighX = mapFreqToXLog(midHighFreq, left, width, minLogFreq, maxLogFreq);
+//
+//        g.setColour(Colours::orange.withAlpha(0.7f)); // Ã–Ã¢Ã¥Ã² Ã¤Ã«Ã¿ Low/Mid Ã«Ã¨Ã­Ã¨Ã¨
+//        if (lowMidX >= left && lowMidX <= right) g.drawVerticalLine(roundToInt(lowMidX), top, bottom);
+//
+//        g.setColour(Colours::cyan.withAlpha(0.7f)); // Ã–Ã¢Ã¥Ã² Ã¤Ã«Ã¿ Mid/High Ã«Ã¨Ã­Ã¨Ã¨
+//        if (midHighX >= left && midHighX <= right) g.drawVerticalLine(roundToInt(midHighX), top, bottom);
+//
+//        // Ã„Ã®Ã¡Ã Ã¢Ã«Ã¿Ã¥Ã¬ Ã²Ã®Ã·ÃªÃ¨ Ã­Ã  Ã«Ã¨Ã­Ã¨Ã¿Ãµ ÃªÃ°Ã®Ã±Ã±Ã®Ã¢Ã¥Ã°Ã 
+//        g.setColour(Colours::orange);
+//        if (lowMidX >= left && lowMidX <= right) g.fillEllipse(lowMidX - 2.f, top, 4.f, 4.f);
+//        g.setColour(Colours::cyan);
+//        if (midHighX >= left && midHighX <= right) g.fillEllipse(midHighX - 2.f, top, 4.f, 4.f);
+//    }
+//} // End namespace MBRP_GUI
 // ---------------------------
 
 //==============================================================================
 MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p),
-    analyzer(p), // Èíèöèàëèçàöèÿ íîâîãî àíàëèçàòîðà
+    analyzer(p), // ÃˆÃ­Ã¨Ã¶Ã¨Ã Ã«Ã¨Ã§Ã Ã¶Ã¨Ã¿ Ã­Ã®Ã¢Ã®Ã£Ã® Ã Ã­Ã Ã«Ã¨Ã§Ã Ã²Ã®Ã°Ã 
     analyzerOverlay(*p.lowMidCrossover, *p.midHighCrossover),
     panSlider(nullptr, "", "Pan"),
     lowMidCrossoverAttachment(processorRef.getAPVTS(), "lowMidCrossover", lowMidCrossoverSlider),
     midHighCrossoverAttachment(processorRef.getAPVTS(), "midHighCrossover", midHighCrossoverSlider)
 {
     setLookAndFeel(&lnf);
-    processorRef.setCopyToFifo(true); // Âêëþ÷àåì FIFO äëÿ àíàëèçàòîðà
+    //processorRef.setCopyToFifo(true); // Ã‚ÃªÃ«Ã¾Ã·Ã Ã¥Ã¬ FIFO Ã¤Ã«Ã¿ Ã Ã­Ã Ã«Ã¨Ã§Ã Ã²Ã®Ã°Ã 
 
     addAndMakeVisible(controlBar);
     addAndMakeVisible(analyzer);
@@ -126,16 +126,26 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     panLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
     panLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible(panLabel);
+    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) {
+        // Ð­Ñ‚Ð° Ð»ÑÐ¼Ð±Ð´Ð° Ð±ÑƒÐ´ÐµÑ‚ Ð²Ñ‹Ð·Ð²Ð°Ð½Ð°, ÐºÐ¾Ð³Ð´Ð° Ð¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»ÑŒ ÐºÐ»Ð¸ÐºÐ½ÐµÑ‚ Ð½Ð° Ð¾Ð±Ð»Ð°ÑÑ‚ÑŒ Ð² Ð¾Ð²ÐµÑ€Ð»ÐµÐµ
+        bandSelectControls.setSelectedBand(bandIndex); // ÐžÐ±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ ÐºÐ½Ð¾Ð¿ÐºÐ¸
+        updatePanAttachment(bandIndex);             // ÐžÐ±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ ÑÐ»Ð°Ð¹Ð´ÐµÑ€ Ð¿Ð°Ð½Ð¾Ñ€Ð°Ð¼Ñ‹
+        };
+    // ------------------------------------
 
-    bandSelectControls.onBandSelected = [this](int bandIndex) { updatePanAttachment(bandIndex); };
-    updatePanAttachment(0);
+    // ÐŸÐ¾Ð´ÐºÐ»ÑŽÑ‡Ð°ÐµÐ¼ ÐºÐ¾Ð»Ð±ÑÐº Ð¾Ñ‚ ÐšÐÐžÐŸÐžÐš Ð²Ñ‹Ð±Ð¾Ñ€Ð° Ð¿Ð¾Ð»Ð¾ÑÑ‹ (Ð¾ÑÑ‚Ð°ÐµÑ‚ÑÑ)
+    bandSelectControls.onBandSelected = [this](int bandIndex) {
+        updatePanAttachment(bandIndex); // ÐžÐ±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ ÑÐ»Ð°Ð¹Ð´ÐµÑ€ Ð¿Ð°Ð½Ð¾Ñ€Ð°Ð¼Ñ‹ Ð¿Ñ€Ð¸ ÐºÐ»Ð¸ÐºÐµ Ð½Ð° ÐºÐ½Ð¾Ð¿ÐºÑƒ
+        };
 
-    setSize(900, 700); // Íîâûé ðàçìåð
-    startTimerHz(30); // Óìåíüøàåì ÷àñòîòó òàéìåðà ðåäàêòîðà
+    updatePanAttachment(0); // Ð˜Ð½Ð¸Ñ†Ð¸Ð°Ð»Ð¸Ð·Ð°Ñ†Ð¸Ñ Ð´Ð»Ñ Low
+
+    setSize(900, 700);
+    startTimerHz(30);
 }
 
 MBRPAudioProcessorEditor::~MBRPAudioProcessorEditor() {
-    processorRef.setCopyToFifo(false); // Âûêëþ÷àåì FIFO
+    //processorRef.setCopyToFifo(false); // Ã‚Ã»ÃªÃ«Ã¾Ã·Ã Ã¥Ã¬ FIFO
     setLookAndFeel(nullptr);
 }
 
@@ -147,7 +157,7 @@ void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     int padding = 10;
     controlBar.setBounds(bounds.removeFromTop(32));
-    int analyzerHeight = 350; // Íîâàÿ âûñîòà
+    int analyzerHeight = 350; // ÃÃ®Ã¢Ã Ã¿ Ã¢Ã»Ã±Ã®Ã²Ã 
     auto analyzerArea = bounds.removeFromTop(analyzerHeight);
     analyzer.setBounds(analyzerArea);
     analyzerOverlay.setBounds(analyzerArea);
@@ -167,7 +177,7 @@ void MBRPAudioProcessorEditor::resized() {
 }
 
 void MBRPAudioProcessorEditor::timerCallback() {
-    // Îñòàâëÿåì ïóñòûì, ò.ê. êîìïîíåíòû èìåþò ñâîè òàéìåðû
+    // ÃŽÃ±Ã²Ã Ã¢Ã«Ã¿Ã¥Ã¬ Ã¯Ã³Ã±Ã²Ã»Ã¬, Ã².Ãª. ÃªÃ®Ã¬Ã¯Ã®Ã­Ã¥Ã­Ã²Ã» Ã¨Ã¬Ã¥Ã¾Ã² Ã±Ã¢Ã®Ã¨ Ã²Ã Ã©Ã¬Ã¥Ã°Ã»
 }
 
 void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) {

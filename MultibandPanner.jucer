@@ -9,6 +9,12 @@
         <FILE id="Ie1xJ3" name="Params.h" compile="0" resource="0" file="Source/DSP/Params.h"/>
       </GROUP>
       <GROUP id="{21AFCF64-F6C6-CABB-BC52-86E6A41E2038}" name="GUI">
+        <GROUP id="{3228495B-DC04-A623-A534-06EDA9303D92}" name="AnalyzerOverlay">
+          <FILE id="YZcIVA" name="AnalyzerOverlay.cpp" compile="1" resource="0"
+                file="Source/GUI/AnalyzerOverlay.cpp"/>
+          <FILE id="xlHrWw" name="AnalyzerOverlay.h" compile="0" resource="0"
+                file="Source/GUI/AnalyzerOverlay.h"/>
+        </GROUP>
         <GROUP id="{065ABFFC-94BF-E557-9A0F-73AA18175BA0}" name="SpectrumAnalyzer">
           <FILE id="ndX2tO" name="SpectrumAnalyzer.cpp" compile="1" resource="0"
                 file="Source/GUI/SpectrumAnalyzer/SpectrumAnalyzer.cpp"/>

@@ -96,8 +96,8 @@ MBRPAudioProcessor::MBRPAudioProcessor()
     : AudioProcessor() // <-- Инициализация базового класса для этого случая (пример)
     // Убедитесь, что это правильная инициализация для вашего случая
 #endif
-// Здесь мог бы быть список инициализации других членов класса через запятую,
-// но у вас он пуст, т.к. apvts инициализируется в теле.
+    , forwardFFT(fftOrder),
+    window(fftSize, juce::dsp::WindowingFunction<float>::hann) // Используем Hann окно
 { // Тело конструктора начинается здесь
     // Инициализация APVTS
     apvts.reset(new juce::AudioProcessorValueTreeState(*this, nullptr, "Parameters", createParameterLayout()));
@@ -110,6 +110,8 @@ MBRPAudioProcessor::MBRPAudioProcessor()
     // prmOutputGain = dynamic_cast<std::atomic<float>*>(apvts->getRawParameterValue("OutGain"));
     // jassert(prmOutputGain != nullptr);
     // apvts->addParameterListener("OutGain", this);
+    fftInternalBuffer.fill(0.0f);
+    fftMagnitudes.fill(0.0f);
 }
 
 MBRPAudioProcessor::~MBRPAudioProcessor()
@@ -152,7 +154,9 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     highBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
 
     // Инициализируем FIFO через setCopyToFifo
-    setCopyToFifo(copyToFifo.load());
+    isFftDataReady.store(false);
+    fftInternalBuffer.fill(0.0f); // Сброс буферов
+    fftMagnitudes.fill(0.0f);
 
     updateParameters();
 }
@@ -196,37 +200,28 @@ void MBRPAudioProcessor::updateParameters()
     calculatePanGains(highPanParam, leftHighGain, rightHighGain);
 }
 
-void MBRPAudioProcessor::pushNextSampleToFifo(const juce::AudioBuffer<float>& buffer, const int startChannel,
-    const int numChannels, juce::AbstractFifo& absFifo,
-    juce::AudioBuffer<float>& fifo)
+void MBRPAudioProcessor::processFFT(const juce::AudioBuffer<float>& inputBuffer)
 {
-    const int numSamples = buffer.getNumSamples();
-    const int fifoSize = fifo.getNumSamples();
+    auto numSamples = inputBuffer.getNumSamples();
+    auto samplesToCopy = std::min(numSamples, fftSize);
+    const float* leftChannelData = inputBuffer.getReadPointer(0);
 
-    if (absFifo.getFreeSpace() < numSamples) return;
+    std::fill(fftInternalBuffer.begin(), fftInternalBuffer.begin() + fftSize, 0.0f);
+    std::copy(leftChannelData, leftChannelData + samplesToCopy, fftInternalBuffer.begin());
 
-    int start1, block1, start2, block2;
-    absFifo.prepareToWrite(numSamples, start1, block1, start2, block2);
+    window.multiplyWithWindowingTable(fftInternalBuffer.data(), fftSize);
+    forwardFFT.performRealOnlyForwardTransform(fftInternalBuffer.data(), true);
 
-    // --- ВАЖНО: Логика копирования/суммирования ---
-    // Вариант 1: Суммирование каналов (как в witte/EqEditor)
-    if (block1 > 0) fifo.copyFrom(0, start1 % fifoSize, buffer.getReadPointer(startChannel), block1);
-    if (block2 > 0) fifo.copyFrom(0, start2 % fifoSize, buffer.getReadPointer(startChannel, block1), block2);
-    for (int channel = startChannel + 1; channel < startChannel + numChannels; ++channel) {
-        if (block1 > 0) fifo.addFrom(0, start1 % fifoSize, buffer.getReadPointer(channel), block1);
-        if (block2 > 0) fifo.addFrom(0, start2 % fifoSize, buffer.getReadPointer(channel, block1), block2);
+    const int numBins = fftSize / 2;
+    const float* fftResult = fftInternalBuffer.data();
+    fftMagnitudes[0] = std::abs(fftResult[0]);
+    for (int i = 1; i < numBins; ++i) {
+        float realPart = fftResult[size_t(2 * i)];
+        float imagPart = fftResult[size_t(2 * i + 1)];
+        fftMagnitudes[i] = std::sqrt(realPart * realPart + imagPart * imagPart);
     }
-    // Если суммировали, возможно, нужно нормализовать делением на numChannels? Зависит от анализатора.
-
-    // Вариант 2: Копирование только одного канала (например, левого)
-    // if (block1 > 0) fifo.copyFrom(0, start1 % fifoSize, buffer.getReadPointer(0), block1); // Копируем только канал 0
-    // if (block2 > 0) fifo.copyFrom(0, start2 % fifoSize, buffer.getReadPointer(0, block1), block2);
-    // --- Выберите один из вариантов ---
-
-    absFifo.finishedWrite(block1 + block2);
-    nextFFTBlockReady.store(true); // Сообщаем анализатору, что есть данные
+    isFftDataReady.store(true); // Устанавливаем флаг
 }
-
 void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ignoreUnused(midiMessages);
@@ -238,9 +233,7 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     updateParameters();
 
     // Копируем ВХОДНЫЕ данные в FIFO (используем вариант 1 - суммирование)
-    if (copyToFifo.load())
-        pushNextSampleToFifo(buffer, 0, totalNumInputChannels, abstractFifoInput, audioFifoInput);
-
+    processFFT(buffer);
     // DSP обработка (разделение на полосы, панорамирование)
     if (totalNumInputChannels == 2 && totalNumOutputChannels == 2)
     {
@@ -308,8 +301,7 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     }
 
     // Копируем ВЫХОДНЫЕ данные в FIFO (используем вариант 1 - суммирование)
-    if (copyToFifo.load())
-        pushNextSampleToFifo(buffer, 0, totalNumOutputChannels, abstractFifoOutput, audioFifoOutput);
+   
 }
 
 bool MBRPAudioProcessor::hasEditor() const { return true; }
@@ -347,27 +339,6 @@ void MBRPAudioProcessor::parameterChanged(const juce::String& parameterID, float
     juce::ignoreUnused(parameterID, newValue);
 }
 
-void MBRPAudioProcessor::setCopyToFifo(bool _copyToFifo)
-{
-    if (_copyToFifo != copyToFifo.load()) {
-        copyToFifo.store(_copyToFifo);
-        if (_copyToFifo) {
-            const int fifoSizeSamples = fftSize * 2; // Пример размера
-            abstractFifoInput.setTotalSize(fifoSizeSamples);
-            abstractFifoOutput.setTotalSize(fifoSizeSamples);
-            audioFifoInput.setSize(1, fifoSizeSamples); // 1 канал для суммированного/левого сигнала
-            audioFifoOutput.setSize(1, fifoSizeSamples);
-            abstractFifoInput.reset();
-            abstractFifoOutput.reset();
-            audioFifoInput.clear();
-            audioFifoOutput.clear();
-            DBG("FIFO Copying Enabled. FIFO size: " << fifoSizeSamples);
-        }
-        else {
-            DBG("FIFO Copying Disabled.");
-        }
-    }
-}
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
     return new MBRPAudioProcessor();
