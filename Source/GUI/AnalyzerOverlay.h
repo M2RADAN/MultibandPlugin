@@ -1,16 +1,16 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include <functional> // Для std::function
+#include <functional> // Р”Р»СЏ std::function
 
-// Прямое объявление, чтобы не включать весь PluginProcessor.h в заголовок
+// РџСЂСЏРјРѕРµ РѕР±СЉСЏРІР»РµРЅРёРµ, С‡С‚РѕР±С‹ РЅРµ РІРєР»СЋС‡Р°С‚СЊ РІРµСЃСЊ PluginProcessor.h РІ Р·Р°РіРѕР»РѕРІРѕРє
 namespace juce { class AudioParameterFloat; }
 
-// Помещаем вспомогательные функции маппинга в пространство имен
-// (Или можно вынести их в отдельный файл Utilities.h, если они используются где-то еще)
+// РџРѕРјРµС‰Р°РµРј РІСЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Рµ С„СѓРЅРєС†РёРё РјР°РїРїРёРЅРіР° РІ РїСЂРѕСЃС‚СЂР°РЅСЃС‚РІРѕ РёРјРµРЅ
+// (РР»Рё РјРѕР¶РЅРѕ РІС‹РЅРµСЃС‚Рё РёС… РІ РѕС‚РґРµР»СЊРЅС‹Р№ С„Р°Р№Р» Utilities.h, РµСЃР»Рё РѕРЅРё РёСЃРїРѕР»СЊР·СѓСЋС‚СЃСЏ РіРґРµ-С‚Рѕ РµС‰Рµ)
 namespace MBRP_GUI
 {
-    // Преобразование Частота -> X (Логарифмическое)
+    // РџСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёРµ Р§Р°СЃС‚РѕС‚Р° -> X (Р›РѕРіР°СЂРёС„РјРёС‡РµСЃРєРѕРµ)
     template<typename FloatType>
     static FloatType mapFreqToXLog(FloatType freq, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
         freq = juce::jlimit(minF, maxF, freq);
@@ -18,63 +18,63 @@ namespace MBRP_GUI
         return left + width * (std::log(freq / minF) / std::log(maxF / minF));
     }
 
-    // Преобразование X -> Частота (Логарифмическое)
-    template<typename FloatType>
-    static FloatType mapXToFreqLog(FloatType x, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
-        x = juce::jlimit(left, x, left + width); // Ограничиваем X
-        if (width <= 0 || maxF / minF <= 1.0f) return minF;
-        float proportion = (x - left) / width;
-        return minF * std::exp(proportion * std::log(maxF / minF));
-    }
+    // РџСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёРµ X -> Р§Р°СЃС‚РѕС‚Р° (Р›РѕРіР°СЂРёС„РјРёС‡РµСЃРєРѕРµ)
+     template<typename FloatType>
+     static FloatType mapXToFreqLog(FloatType x, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
+         x = juce::jlimit(left, x, left + width); // РћРіСЂР°РЅРёС‡РёРІР°РµРј X
+         if (width <= 0 || maxF / minF <= 1.0f) return minF;
+         float proportion = (x - left) / width;
+         return minF * std::exp(proportion * std::log(maxF / minF));
+     }
 
-    // --- Класс Оверлея Анализатора ---
+    // --- РљР»Р°СЃСЃ РћРІРµСЂР»РµСЏ РђРЅР°Р»РёР·Р°С‚РѕСЂР° ---
     class AnalyzerOverlay final : public juce::Component, public juce::Timer
     {
     public:
-        // Конструктор принимает ссылки на параметры кроссовера
+        // РљРѕРЅСЃС‚СЂСѓРєС‚РѕСЂ РїСЂРёРЅРёРјР°РµС‚ СЃСЃС‹Р»РєРё РЅР° РїР°СЂР°РјРµС‚СЂС‹ РєСЂРѕСЃСЃРѕРІРµСЂР°
         AnalyzerOverlay(juce::AudioParameterFloat& lowXover,
-            juce::AudioParameterFloat& midXover);
-        ~AnalyzerOverlay() override = default; // Деструктор по умолчанию
+                        juce::AudioParameterFloat& midXover);
+        ~AnalyzerOverlay() override = default; // Р”РµСЃС‚СЂСѓРєС‚РѕСЂ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
 
-        // --- Основные методы Component/Timer ---
+        // --- РћСЃРЅРѕРІРЅС‹Рµ РјРµС‚РѕРґС‹ Component/Timer ---
         void paint(juce::Graphics& g) override;
         void resized() override;
         void timerCallback() override;
 
-        // --- Обработчики событий мыши ---
-        void mouseDown(const juce::MouseEvent& event) override;
-        void mouseDrag(const juce::MouseEvent& event) override;
-        void mouseUp(const juce::MouseEvent& event) override;
+        // --- РћР±СЂР°Р±РѕС‚С‡РёРєРё СЃРѕР±С‹С‚РёР№ РјС‹С€Рё ---
+        void mouseDown (const juce::MouseEvent& event) override;
+        void mouseDrag (const juce::MouseEvent& event) override;
+        void mouseUp (const juce::MouseEvent& event) override;
 
-        // --- Колбэк для уведомления редактора о клике на область полосы ---
+        // --- РљРѕР»Р±СЌРє РґР»СЏ СѓРІРµРґРѕРјР»РµРЅРёСЏ СЂРµРґР°РєС‚РѕСЂР° Рѕ РєР»РёРєРµ РЅР° РѕР±Р»Р°СЃС‚СЊ РїРѕР»РѕСЃС‹ ---
         std::function<void(int)> onBandAreaClicked;
 
     private:
-        // --- Приватные методы ---
+        // --- РџСЂРёРІР°С‚РЅС‹Рµ РјРµС‚РѕРґС‹ ---
         void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<float> graphBounds);
-        // Преобразование X в частоту (использует константы min/maxFreq)
+        // РџСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёРµ X РІ С‡Р°СЃС‚РѕС‚Сѓ (РёСЃРїРѕР»СЊР·СѓРµС‚ РєРѕРЅСЃС‚Р°РЅС‚С‹ min/maxFreq)
         float xToFrequency(float x, const juce::Rectangle<float>& graphBounds) const;
-        // Получение области ГРАФИКА анализатора (важно для координат мыши)
+        // РџРѕР»СѓС‡РµРЅРёРµ РѕР±Р»Р°СЃС‚Рё Р“Р РђР¤РРљРђ Р°РЅР°Р»РёР·Р°С‚РѕСЂР° (РІР°Р¶РЅРѕ РґР»СЏ РєРѕРѕСЂРґРёРЅР°С‚ РјС‹С€Рё)
         juce::Rectangle<float> getGraphBounds() const;
 
-        // --- Ссылки на параметры процессора ---
+        // --- РЎСЃС‹Р»РєРё РЅР° РїР°СЂР°РјРµС‚СЂС‹ РїСЂРѕС†РµСЃСЃРѕСЂР° ---
         juce::AudioParameterFloat& lowMidXoverParam;
         juce::AudioParameterFloat& midHighXoverParam;
 
-        // --- Состояние перетаскивания ---
+        // --- РЎРѕСЃС‚РѕСЏРЅРёРµ РїРµСЂРµС‚Р°СЃРєРёРІР°РЅРёСЏ ---
         enum class DraggingState { None, DraggingLowMid, DraggingMidHigh };
-        DraggingState currentDraggingState{ DraggingState::None };
-        const float dragTolerance = 5.0f; // Допуск в пикселях для захвата линии
+        DraggingState currentDraggingState { DraggingState::None };
+        const float dragTolerance = 5.0f; // Р”РѕРїСѓСЃРє РІ РїРёРєСЃРµР»СЏС… РґР»СЏ Р·Р°С…РІР°С‚Р° Р»РёРЅРёРё
 
-        // --- Константы для маппинга (можно вынести) ---
+        // --- РљРѕРЅСЃС‚Р°РЅС‚С‹ РґР»СЏ РјР°РїРїРёРЅРіР° (РјРѕР¶РЅРѕ РІС‹РЅРµСЃС‚Рё) ---
         static constexpr float minLogFreq = 20.0f;
         static constexpr float maxLogFreq = 20000.0f;
 
-        // --- Цвета линий кроссовера ---
-        const juce::Colour crossoverLineColour{ juce::Colours::orange };
-        const juce::Colour crossoverLineColour2{ juce::Colours::cyan };
+        // --- Р¦РІРµС‚Р° Р»РёРЅРёР№ РєСЂРѕСЃСЃРѕРІРµСЂР° ---
+        const juce::Colour crossoverLineColour    { juce::Colours::orange };
+        const juce::Colour crossoverLineColour2   { juce::Colours::cyan };
 
-        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyzerOverlay)
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnalyzerOverlay)
     };
 
 } // namespace MBRP_GUI

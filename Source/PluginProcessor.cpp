@@ -96,22 +96,13 @@ MBRPAudioProcessor::MBRPAudioProcessor()
     : AudioProcessor() // <-- Инициализация базового класса для этого случая (пример)
     // Убедитесь, что это правильная инициализация для вашего случая
 #endif
-    , forwardFFT(fftOrder),
-    window(fftSize, juce::dsp::WindowingFunction<float>::hann) // Используем Hann окно
+    
 { // Тело конструктора начинается здесь
-    // Инициализация APVTS
     apvts.reset(new juce::AudioProcessorValueTreeState(*this, nullptr, "Parameters", createParameterLayout()));
-
-    // Получаем указатели на параметры
     lowMidCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("lowMidCrossover"));
     midHighCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("midHighCrossover"));
     jassert(lowMidCrossover != nullptr && midHighCrossover != nullptr);
-    // Если добавили OutGain:
-    // prmOutputGain = dynamic_cast<std::atomic<float>*>(apvts->getRawParameterValue("OutGain"));
-    // jassert(prmOutputGain != nullptr);
-    // apvts->addParameterListener("OutGain", this);
-    fftInternalBuffer.fill(0.0f);
-    fftMagnitudes.fill(0.0f);
+    // Не подписываемся на листенер, так как нет OutputGain
 }
 
 MBRPAudioProcessor::~MBRPAudioProcessor()
@@ -154,9 +145,7 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     highBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
 
     // Инициализируем FIFO через setCopyToFifo
-    isFftDataReady.store(false);
-    fftInternalBuffer.fill(0.0f); // Сброс буферов
-    fftMagnitudes.fill(0.0f);
+    setCopyToFifo(copyToFifo.load());
 
     updateParameters();
 }
@@ -200,27 +189,31 @@ void MBRPAudioProcessor::updateParameters()
     calculatePanGains(highPanParam, leftHighGain, rightHighGain);
 }
 
-void MBRPAudioProcessor::processFFT(const juce::AudioBuffer<float>& inputBuffer)
+void MBRPAudioProcessor::pushNextSampleToFifo(const juce::AudioBuffer<float>& buffer, const int /*startChannel*/,
+    const int /*numChannels*/, juce::AbstractFifo& absFifo,
+    juce::AudioBuffer<float>& fifo)
 {
-    auto numSamples = inputBuffer.getNumSamples();
-    auto samplesToCopy = std::min(numSamples, fftSize);
-    const float* leftChannelData = inputBuffer.getReadPointer(0);
+    const int numSamples = buffer.getNumSamples();
+    const int fifoSize = fifo.getNumSamples();
+    if (absFifo.getFreeSpace() < numSamples || fifoSize == 0) return;
 
-    std::fill(fftInternalBuffer.begin(), fftInternalBuffer.begin() + fftSize, 0.0f);
-    std::copy(leftChannelData, leftChannelData + samplesToCopy, fftInternalBuffer.begin());
+    int start1, block1, start2, block2;
+    absFifo.prepareToWrite(numSamples, start1, block1, start2, block2);
 
-    window.multiplyWithWindowingTable(fftInternalBuffer.data(), fftSize);
-    forwardFFT.performRealOnlyForwardTransform(fftInternalBuffer.data(), true);
-
-    const int numBins = fftSize / 2;
-    const float* fftResult = fftInternalBuffer.data();
-    fftMagnitudes[0] = std::abs(fftResult[0]);
-    for (int i = 1; i < numBins; ++i) {
-        float realPart = fftResult[size_t(2 * i)];
-        float imagPart = fftResult[size_t(2 * i + 1)];
-        fftMagnitudes[i] = std::sqrt(realPart * realPart + imagPart * imagPart);
+    // Копируем ТОЛЬКО левый канал (индекс 0)
+    if (buffer.getNumChannels() > 0) // Убедимся, что есть хотя бы один канал
+    {
+        if (block1 > 0) fifo.copyFrom(0, start1 % fifoSize, buffer.getReadPointer(0), block1);
+        if (block2 > 0) fifo.copyFrom(0, start2 % fifoSize, buffer.getReadPointer(0, block1), block2);
     }
-    isFftDataReady.store(true); // Устанавливаем флаг
+    else {
+        // Если входной буфер пуст, можно записать тишину (или ничего не делать)
+        if (block1 > 0) fifo.clear(start1 % fifoSize, block1);
+        if (block2 > 0) fifo.clear(start2 % fifoSize, block2);
+    }
+
+    absFifo.finishedWrite(block1 + block2);
+    nextFFTBlockReady.store(true); // Устанавливаем флаг для анализатора
 }
 void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
@@ -233,7 +226,8 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     updateParameters();
 
     // Копируем ВХОДНЫЕ данные в FIFO (используем вариант 1 - суммирование)
-    processFFT(buffer);
+    if (copyToFifo.load())
+        pushNextSampleToFifo(buffer, 0, 1, abstractFifoInput, audioFifoInput);
     // DSP обработка (разделение на полосы, панорамирование)
     if (totalNumInputChannels == 2 && totalNumOutputChannels == 2)
     {
@@ -299,9 +293,45 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             rightOut[sample] = lowR + midR + highR;
         }
     }
-
+    if (copyToFifo.load())
+        pushNextSampleToFifo(buffer, 0, 1, abstractFifoOutput, audioFifoOutput);
     // Копируем ВЫХОДНЫЕ данные в FIFO (используем вариант 1 - суммирование)
    
+}
+void MBRPAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue) {
+    juce::ignoreUnused(parameterID, newValue);
+}
+
+void MBRPAudioProcessor::setCopyToFifo(bool _copyToFifo) {
+    if (_copyToFifo != copyToFifo.load()) {
+        copyToFifo.store(_copyToFifo);
+        if (_copyToFifo) {
+            const int fifoSizeSamples = fftSize * 2; // Можно сделать меньше, например fftSize
+            abstractFifoInput.setTotalSize(fifoSizeSamples);
+            abstractFifoOutput.setTotalSize(fifoSizeSamples);
+            audioFifoInput.setSize(1, fifoSizeSamples); // 1 канал
+            audioFifoOutput.setSize(1, fifoSizeSamples);
+            abstractFifoInput.reset(); abstractFifoOutput.reset();
+            audioFifoInput.clear(); audioFifoOutput.clear();
+            DBG("FIFO Copying Enabled. FIFO size: " << fifoSizeSamples);
+        }
+        else {
+            DBG("FIFO Copying Disabled.");
+        }
+    }
+    else if (_copyToFifo) { // Если уже включено, но вызвали снова (например, в prepareToPlay)
+        // Просто убедимся, что размеры FIFO корректны (на случай изменения fftSize)
+        const int fifoSizeSamples = fftSize * 2;
+        if (abstractFifoInput.getTotalSize() != fifoSizeSamples || audioFifoInput.getNumSamples() != fifoSizeSamples) {
+            abstractFifoInput.setTotalSize(fifoSizeSamples);
+            abstractFifoOutput.setTotalSize(fifoSizeSamples);
+            audioFifoInput.setSize(1, fifoSizeSamples);
+            audioFifoOutput.setSize(1, fifoSizeSamples);
+            abstractFifoInput.reset(); abstractFifoOutput.reset();
+            audioFifoInput.clear(); audioFifoOutput.clear();
+            DBG("FIFO Resized/Reset. FIFO size: " << fifoSizeSamples);
+        }
+    }
 }
 
 bool MBRPAudioProcessor::hasEditor() const { return true; }
@@ -333,11 +363,6 @@ void MBRPAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
     }
 }
 
-void MBRPAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
-{
-    // Оставьте пустым, если не используете prmOutputGain или другую логику здесь
-    juce::ignoreUnused(parameterID, newValue);
-}
 
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {

@@ -91,7 +91,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     midHighCrossoverAttachment(processorRef.getAPVTS(), "midHighCrossover", midHighCrossoverSlider)
 {
     setLookAndFeel(&lnf);
-    //processorRef.setCopyToFifo(true); // Âêëþ÷àåì FIFO äëÿ àíàëèçàòîðà
+    processorRef.setCopyToFifo(true); // Âêëþ÷àåì FIFO äëÿ àíàëèçàòîðà
 
     addAndMakeVisible(controlBar);
     addAndMakeVisible(analyzer);
@@ -145,7 +145,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
 }
 
 MBRPAudioProcessorEditor::~MBRPAudioProcessorEditor() {
-    //processorRef.setCopyToFifo(false); // Âûêëþ÷àåì FIFO
+    processorRef.setCopyToFifo(false); // Âûêëþ÷àåì FIFO
     setLookAndFeel(nullptr);
 }
 

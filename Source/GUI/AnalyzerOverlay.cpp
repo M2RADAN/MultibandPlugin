@@ -1,67 +1,67 @@
 #include "AnalyzerOverlay.h"
-//#include "../Source/PluginProcessor.h" // Включаем, если нужны константы sampleRate и т.д.
-                                     // но для данной реализации он не обязателен.
+#include "../Source/PluginProcessor.h" // Г‚ГЄГ«ГѕГ·Г ГҐГ¬, ГҐГ±Г«ГЁ Г­ГіГ¦Г­Г» ГЄГ®Г­Г±ГІГ Г­ГІГ» sampleRate ГЁ ГІ.Г¤.
+                                     // Г­Г® Г¤Г«Гї Г¤Г Г­Г­Г®Г© Г°ГҐГ Г«ГЁГ§Г Г¶ГЁГЁ Г®Г­ Г­ГҐ Г®ГЎГїГ§Г ГІГҐГ«ГҐГ­.
 
 namespace MBRP_GUI
 {
 
-    // Конструктор
+    // ГЉГ®Г­Г±ГІГ°ГіГЄГІГ®Г°
     AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowXover,
         juce::AudioParameterFloat& midXover) :
         lowMidXoverParam(lowXover),
         midHighXoverParam(midXover)
     {
-        // Оверлей должен перехватывать события мыши, чтобы реагировать на клики/перетаскивания
+        // ГЋГўГҐГ°Г«ГҐГ© Г¤Г®Г«Г¦ГҐГ­ ГЇГҐГ°ГҐГµГўГ ГІГ»ГўГ ГІГј Г±Г®ГЎГ»ГІГЁГї Г¬Г»ГёГЁ, Г·ГІГ®ГЎГ» Г°ГҐГ ГЈГЁГ°Г®ГўГ ГІГј Г­Г  ГЄГ«ГЁГЄГЁ/ГЇГҐГ°ГҐГІГ Г±ГЄГЁГўГ Г­ГЁГї
         setInterceptsMouseClicks(true, true);
         setPaintingIsUnclipped(true);
-        startTimerHz(30); // Таймер для перерисовки линий при изменении параметров
+        startTimerHz(30); // Г’Г Г©Г¬ГҐГ° Г¤Г«Гї ГЇГҐГ°ГҐГ°ГЁГ±Г®ГўГЄГЁ Г«ГЁГ­ГЁГ© ГЇГ°ГЁ ГЁГ§Г¬ГҐГ­ГҐГ­ГЁГЁ ГЇГ Г°Г Г¬ГҐГІГ°Г®Гў
     }
 
-    // Отрисовка
+    // ГЋГІГ°ГЁГ±Г®ГўГЄГ 
     void AnalyzerOverlay::paint(juce::Graphics& g)
     {
-        // Рисуем только линии кроссовера, используя границы ГРАФИКА
+        // ГђГЁГ±ГіГҐГ¬ ГІГ®Г«ГјГЄГ® Г«ГЁГ­ГЁГЁ ГЄГ°Г®Г±Г±Г®ГўГҐГ°Г , ГЁГ±ГЇГ®Г«ГјГ§ГіГї ГЈГ°Г Г­ГЁГ¶Г» ГѓГђГЂГ”Г€ГЉГЂ
         drawCrossoverLines(g, getGraphBounds());
     }
 
-    // Таймер (просто перерисовывает)
+    // Г’Г Г©Г¬ГҐГ° (ГЇГ°Г®Г±ГІГ® ГЇГҐГ°ГҐГ°ГЁГ±Г®ГўГ»ГўГ ГҐГІ)
     void AnalyzerOverlay::timerCallback()
     {
-        // Перерисовываем, чтобы линии обновлялись, если параметры изменились извне
+        // ГЏГҐГ°ГҐГ°ГЁГ±Г®ГўГ»ГўГ ГҐГ¬, Г·ГІГ®ГЎГ» Г«ГЁГ­ГЁГЁ Г®ГЎГ­Г®ГўГ«ГїГ«ГЁГ±Гј, ГҐГ±Г«ГЁ ГЇГ Г°Г Г¬ГҐГІГ°Г» ГЁГ§Г¬ГҐГ­ГЁГ«ГЁГ±Гј ГЁГ§ГўГ­ГҐ
         repaint();
     }
 
-    // Изменение размера (просто перерисовываем)
+    // Г€Г§Г¬ГҐГ­ГҐГ­ГЁГҐ Г°Г Г§Г¬ГҐГ°Г  (ГЇГ°Г®Г±ГІГ® ГЇГҐГ°ГҐГ°ГЁГ±Г®ГўГ»ГўГ ГҐГ¬)
     void AnalyzerOverlay::resized()
     {
         repaint();
     }
 
-    // --- Получение области графика ---
-    // ВАЖНО: Эта логика ДОЛЖНА СОВПАДАТЬ с тем, как SpectrumAnalyzer определяет свою область
+    // --- ГЏГ®Г«ГіГ·ГҐГ­ГЁГҐ Г®ГЎГ«Г Г±ГІГЁ ГЈГ°Г ГґГЁГЄГ  ---
+    // Г‚ГЂГ†ГЌГЋ: ГќГІГ  Г«Г®ГЈГЁГЄГ  Г„ГЋГ‹Г†ГЌГЂ Г‘ГЋГ‚ГЏГЂГ„ГЂГ’Гњ Г± ГІГҐГ¬, ГЄГ ГЄ SpectrumAnalyzer Г®ГЇГ°ГҐГ¤ГҐГ«ГїГҐГІ Г±ГўГ®Гѕ Г®ГЎГ«Г Г±ГІГј
     juce::Rectangle<float> AnalyzerOverlay::getGraphBounds() const
     {
-        // Пример логики, как было в SpectrumAnalyzer::drawGrid
-        // Замените на актуальную логику вашего SpectrumAnalyzer, если она отличается!
+        // ГЏГ°ГЁГ¬ГҐГ° Г«Г®ГЈГЁГЄГЁ, ГЄГ ГЄ ГЎГ»Г«Г® Гў SpectrumAnalyzer::drawGrid
+        // Г‡Г Г¬ГҐГ­ГЁГІГҐ Г­Г  Г ГЄГІГіГ Г«ГјГ­ГіГѕ Г«Г®ГЈГЁГЄГі ГўГ ГёГҐГЈГ® SpectrumAnalyzer, ГҐГ±Г«ГЁ Г®Г­Г  Г®ГІГ«ГЁГ·Г ГҐГІГ±Гї!
         return getLocalBounds().toFloat().reduced(1.f, 5.f);
     }
 
 
-    // --- Преобразование X в частоту ---
+    // --- ГЏГ°ГҐГ®ГЎГ°Г Г§Г®ГўГ Г­ГЁГҐ X Гў Г·Г Г±ГІГ®ГІГі ---
     float AnalyzerOverlay::xToFrequency(float x, const juce::Rectangle<float>& graphBounds) const
     {
         auto left = graphBounds.getX();
         auto width = graphBounds.getWidth();
-        // Используем mapXToFreqLog из хедера
+        // Г€Г±ГЇГ®Г«ГјГ§ГіГҐГ¬ mapXToFreqLog ГЁГ§ ГµГҐГ¤ГҐГ°Г 
         float freq = mapXToFreqLog(x, left, width, minLogFreq, maxLogFreq);
-        // Дополнительно ограничиваем диапазоном параметров (на всякий случай)
-        freq = juce::jlimit(lowMidXoverParam.getNormalisableRange().start, // Нижний предел
-            midHighXoverParam.getNormalisableRange().end,  // Верхний предел
+        // Г„Г®ГЇГ®Г«Г­ГЁГІГҐГ«ГјГ­Г® Г®ГЈГ°Г Г­ГЁГ·ГЁГўГ ГҐГ¬ Г¤ГЁГ ГЇГ Г§Г®Г­Г®Г¬ ГЇГ Г°Г Г¬ГҐГІГ°Г®Гў (Г­Г  ГўГ±ГїГЄГЁГ© Г±Г«ГіГ·Г Г©)
+        freq = juce::jlimit(lowMidXoverParam.getNormalisableRange().start, // ГЌГЁГ¦Г­ГЁГ© ГЇГ°ГҐГ¤ГҐГ«
+            midHighXoverParam.getNormalisableRange().end,  // Г‚ГҐГ°ГµГ­ГЁГ© ГЇГ°ГҐГ¤ГҐГ«
             freq);
         return freq;
     }
 
-    // --- Отрисовка линий кроссовера ---
+    // --- ГЋГІГ°ГЁГ±Г®ГўГЄГ  Г«ГЁГ­ГЁГ© ГЄГ°Г®Г±Г±Г®ГўГҐГ°Г  ---
     void AnalyzerOverlay::drawCrossoverLines(juce::Graphics& g, juce::Rectangle<float> graphBounds)
     {
         using namespace juce;
@@ -74,18 +74,18 @@ namespace MBRP_GUI
         float lowMidFreq = lowMidXoverParam.get();
         float midHighFreq = midHighXoverParam.get();
 
-        // Используем mapFreqToXLog из хедера
+        // Г€Г±ГЇГ®Г«ГјГ§ГіГҐГ¬ mapFreqToXLog ГЁГ§ ГµГҐГ¤ГҐГ°Г 
         float lowMidX = mapFreqToXLog(lowMidFreq, left, width, minLogFreq, maxLogFreq);
         float midHighX = mapFreqToXLog(midHighFreq, left, width, minLogFreq, maxLogFreq);
 
-        // Рисуем линии
+        // ГђГЁГ±ГіГҐГ¬ Г«ГЁГ­ГЁГЁ
         g.setColour(crossoverLineColour.withAlpha(0.7f));
         if (lowMidX >= left && lowMidX <= right) g.drawVerticalLine(roundToInt(lowMidX), top, bottom);
 
         g.setColour(crossoverLineColour2.withAlpha(0.7f));
         if (midHighX >= left && midHighX <= right) g.drawVerticalLine(roundToInt(midHighX), top, bottom);
 
-        // Рисуем ручки
+        // ГђГЁГ±ГіГҐГ¬ Г°ГіГ·ГЄГЁ
         const float handleSize = 6.0f;
         const float handleRadius = handleSize / 2.0f;
         g.setColour(crossoverLineColour);
@@ -94,11 +94,11 @@ namespace MBRP_GUI
         if (midHighX >= left && midHighX <= right) g.fillEllipse(midHighX - handleRadius, top, handleSize, handleSize);
     }
 
-    // --- Обработчики мыши ---
+    // --- ГЋГЎГ°Г ГЎГ®ГІГ·ГЁГЄГЁ Г¬Г»ГёГЁ ---
     void AnalyzerOverlay::mouseDown(const juce::MouseEvent& event)
     {
-        auto graphBounds = getGraphBounds(); // Получаем область графика
-        if (!graphBounds.contains(event.getPosition().toFloat())) // Клик вне области графика
+        auto graphBounds = getGraphBounds(); // ГЏГ®Г«ГіГ·Г ГҐГ¬ Г®ГЎГ«Г Г±ГІГј ГЈГ°Г ГґГЁГЄГ 
+        if (!graphBounds.contains(event.getPosition().toFloat())) // ГЉГ«ГЁГЄ ГўГ­ГҐ Г®ГЎГ«Г Г±ГІГЁ ГЈГ°Г ГґГЁГЄГ 
         {
             currentDraggingState = DraggingState::None;
             return;
@@ -106,11 +106,11 @@ namespace MBRP_GUI
 
         float mouseX = static_cast<float>(event.x);
 
-        // Получаем текущие X-координаты линий внутри области графика
+        // ГЏГ®Г«ГіГ·Г ГҐГ¬ ГІГҐГЄГіГ№ГЁГҐ X-ГЄГ®Г®Г°Г¤ГЁГ­Г ГІГ» Г«ГЁГ­ГЁГ© ГўГ­ГіГІГ°ГЁ Г®ГЎГ«Г Г±ГІГЁ ГЈГ°Г ГґГЁГЄГ 
         float lowMidX = mapFreqToXLog(lowMidXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
         float midHighX = mapFreqToXLog(midHighXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
 
-        // Проверяем клик рядом с линиями
+        // ГЏГ°Г®ГўГҐГ°ГїГҐГ¬ ГЄГ«ГЁГЄ Г°ГїГ¤Г®Г¬ Г± Г«ГЁГ­ГЁГїГ¬ГЁ
         if (std::abs(mouseX - lowMidX) < dragTolerance) {
             currentDraggingState = DraggingState::DraggingLowMid;
             lowMidXoverParam.beginChangeGesture();
@@ -123,7 +123,7 @@ namespace MBRP_GUI
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
             DBG("Overlay: Started dragging Mid/High");
         }
-        else { // Клик по области
+        else { // ГЉГ«ГЁГЄ ГЇГ® Г®ГЎГ«Г Г±ГІГЁ
             currentDraggingState = DraggingState::None;
             float clickedFreq = xToFrequency(mouseX, graphBounds);
             int bandIndex = -1;
@@ -136,7 +136,7 @@ namespace MBRP_GUI
             }
             DBG("Overlay: Clicked in band area: " << bandIndex);
         }
-        repaint(); // Обновить вид (например, курсор)
+        repaint(); // ГЋГЎГ­Г®ГўГЁГІГј ГўГЁГ¤ (Г­Г ГЇГ°ГЁГ¬ГҐГ°, ГЄГіГ°Г±Г®Г°)
     }
 
     void AnalyzerOverlay::mouseDrag(const juce::MouseEvent& event)
@@ -144,19 +144,19 @@ namespace MBRP_GUI
         if (currentDraggingState == DraggingState::None) return;
 
         auto graphBounds = getGraphBounds();
-        // Ограничиваем X координату границами графика перед конвертацией в частоту
+        // ГЋГЈГ°Г Г­ГЁГ·ГЁГўГ ГҐГ¬ X ГЄГ®Г®Г°Г¤ГЁГ­Г ГІГі ГЈГ°Г Г­ГЁГ¶Г Г¬ГЁ ГЈГ°Г ГґГЁГЄГ  ГЇГҐГ°ГҐГ¤ ГЄГ®Г­ГўГҐГ°ГІГ Г¶ГЁГҐГ© Гў Г·Г Г±ГІГ®ГІГі
         float mouseX = juce::jlimit(graphBounds.getX(), graphBounds.getRight(), (float)event.x);
         float newFreq = xToFrequency(mouseX, graphBounds);
 
         if (currentDraggingState == DraggingState::DraggingLowMid) {
-            newFreq = juce::jlimit(minLogFreq, midHighXoverParam.get() - 1.0f, newFreq); // Ограничение
+            newFreq = juce::jlimit(minLogFreq, midHighXoverParam.get() - 1.0f, newFreq); // ГЋГЈГ°Г Г­ГЁГ·ГҐГ­ГЁГҐ
             lowMidXoverParam.setValueNotifyingHost(lowMidXoverParam.getNormalisableRange().convertTo0to1(newFreq));
         }
         else if (currentDraggingState == DraggingState::DraggingMidHigh) {
-            newFreq = juce::jlimit(lowMidXoverParam.get() + 1.0f, maxLogFreq, newFreq); // Ограничение
+            newFreq = juce::jlimit(lowMidXoverParam.get() + 1.0f, maxLogFreq, newFreq); // ГЋГЈГ°Г Г­ГЁГ·ГҐГ­ГЁГҐ
             midHighXoverParam.setValueNotifyingHost(midHighXoverParam.getNormalisableRange().convertTo0to1(newFreq));
         }
-        // Перерисовка будет по таймеру или можно добавить repaint()
+        // ГЏГҐГ°ГҐГ°ГЁГ±Г®ГўГЄГ  ГЎГіГ¤ГҐГІ ГЇГ® ГІГ Г©Г¬ГҐГ°Гі ГЁГ«ГЁ Г¬Г®Г¦Г­Г® Г¤Г®ГЎГ ГўГЁГІГј repaint()
     }
 
     void AnalyzerOverlay::mouseUp(const juce::MouseEvent& /*event*/)

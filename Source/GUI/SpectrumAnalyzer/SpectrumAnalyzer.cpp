@@ -1,21 +1,20 @@
-#include "SpectrumAnalyzer.h" // Âêëþ÷àåò PluginProcessor.h ÷åðåç ñåáÿ
+#include "SpectrumAnalyzer.h" // Включает PluginProcessor.h через себя
 #include <vector>
-#include <cmath>      // Äëÿ std::log, std::exp, std::abs, std::max
-#include <limits>     // Íå èñïîëüçóåòñÿ íàïðÿìóþ, íî ïîëåçíî äëÿ ÷èñëîâûõ ïðåäåëîâ
-#include <algorithm>  // Äëÿ std::min, std::max, std::sort, std::unique
-#include <juce_gui_basics/juce_gui_basics.h> // Äëÿ TextLayout, Graphics è ò.ä.
-#include <juce_dsp/juce_dsp.h>
-#include "../Source/PluginProcessor.h"// Äëÿ Decibels
+#include <cmath>      // Для std::log, std::exp, std::abs, std::max
+#include <limits>     // Не используется напрямую, но полезно для числовых пределов
+#include <algorithm>  // Для std::min, std::max, std::sort, std::unique
+#include <juce_gui_basics/juce_gui_basics.h> // Для TextLayout, Graphics и т.д.
+#include <juce_dsp/juce_dsp.h>             // Для Decibels
 
-// Óáåäèìñÿ, ÷òî ïðîñòðàíñòâî èìåí èç LookAndFeel äîñòóïíî äëÿ öâåòîâ (åñëè íóæíî)
-// #include "../LookAndFeel.h" // Ðàñêîììåíòèðóéòå, åñëè ColorScheme îïðåäåëåí òàì
+// Убедимся, что пространство имен из LookAndFeel доступно для цветов (если нужно)
+// #include "../LookAndFeel.h" // Раскомментируйте, если ColorScheme определен там
 
-// --- Ïðîñòðàíñòâî èìåí ---
+// --- Пространство имен ---
 namespace MBRP_GUI
 {
 
-    // --- Õåëïåð äëÿ òåêñòà ---
-    // Îïðåäåëåíèå ñòàòè÷åñêîé ôóíêöèè-÷ëåíà
+    // --- Хелпер для текста ---
+    // Определение статической функции-члена
     /*static*/float SpectrumAnalyzer::getTextLayoutWidth(const juce::String& text, const juce::Font& font)
     {
         juce::TextLayout textLayout;
@@ -26,98 +25,262 @@ namespace MBRP_GUI
     }
 
     //==============================================================================
-    // Êîíñòðóêòîð
+    // Конструктор
     SpectrumAnalyzer::SpectrumAnalyzer(MBRPAudioProcessor& p) :
         processor{ p },
-        // Инициализируем размером fftSize/2
+        // Инициализируем векторы с размером fftSize/2 и значением mindB
         displayData(size_t(MBRPAudioProcessor::fftSize / 2), mindB),
-        peakHoldLevels(size_t(MBRPAudioProcessor::fftSize / 2), mindB)
+        peakHoldLevels(size_t(MBRPAudioProcessor::fftSize / 2), mindB),
+        fftPoints(MBRPAudioProcessor::fftSize) // Выделяем память для fftPoints (структура содержит int)
     {
-        peakDbLevel.store(mindB);
-        startTimerHz(60); // Таймер GUI
+        peakDbLevel.store(mindB);   // Инициализируем атомарный пик
+        avgInput.clear();           // Очищаем буферы усреднения
+        avgOutput.clear();
+        startTimerHz(60);           // Устанавливаем частоту таймера (например, 60 Гц)
     }
 
     //==============================================================================
-    // Òàéìåð - îñíîâíîé öèêë îáíîâëåíèÿ àíàëèçàòîðà
+    // Таймер - основной цикл обновления анализатора
     void SpectrumAnalyzer::timerCallback()
     {
-        bool newDataAvailable = false;
-        // Проверяем флаг из процессора
-        bool expected = true;
-        if (processor.getIsFftDataReady().compare_exchange_strong(expected, false)) // Используем isFftDataReady
+        bool newDataAvailable = processor.nextFFTBlockReady.load(); // Проверяем флаг из процессора
+
+        if (newDataAvailable)
         {
-            newDataAvailable = true;
-            auto& magnitudes = processor.getFftMagnitudes(); // Получаем магнитуды
-            auto numBins = magnitudes.size(); // fftSize / 2
-
-            if (displayData.size() != numBins) displayData.resize(numBins);
-            if (peakHoldLevels.size() != numBins) peakHoldLevels.resize(numBins);
-
-            // КОЭФФИЦИЕНТ УСИЛЕНИЯ И НОРМАЛИЗАЦИЯ (Настройте!)
-            const float gainAdjustment = 30.0f; // <-- НАСТРОЙТЕ УРОВЕНЬ
-            const float windowGainCorrection = 2.0f; // Компенсация окна Hann (примерно)
-            const float normalizationFactor = (gainAdjustment * 2.0f / static_cast<float>(MBRPAudioProcessor::fftSize)) * windowGainCorrection;
-
-            float currentFramePeak = mindB;
-            std::vector<float> latestDbData(numBins); // Временный вектор
-
-            // 1. Конвертируем магнитуды в dB
-            for (size_t i = 0; i < numBins; ++i) {
-                float normalizedMagnitude = magnitudes[i] * normalizationFactor;
-                latestDbData[i] = juce::Decibels::gainToDecibels(normalizedMagnitude, mindB);
-                if (latestDbData[i] > currentFramePeak) currentFramePeak = latestDbData[i];
-            }
-            peakDbLevel.store(currentFramePeak);
-
-            // 2. Обновляем displayData (EMA) и peakHoldLevels (Decay)
-            for (size_t i = 0; i < numBins; ++i) {
-                float newValDb = latestDbData[i]; float oldDisplayDb = displayData[i]; float oldPeakDb = peakHoldLevels[i];
-                displayData[i] = smoothingAlpha * newValDb + (1.0f - smoothingAlpha) * oldDisplayDb;
-                displayData[i] = std::max(mindB, displayData[i]);
-                if (newValDb > oldPeakDb) peakHoldLevels[i] = newValDb;
-                else peakHoldLevels[i] = std::max(displayData[i], juce::Decibels::gainToDecibels(juce::Decibels::decibelsToGain(oldPeakDb) * peakHoldDecayFactor, mindB));
-            }
+            drawNextFrame(); // Обрабатываем новые данные FFT из FIFO
+            processor.nextFFTBlockReady.store(false); // Сбрасываем флаг
         }
 
-        // Обновляем пики (затухание), если не было новых данных
+        // Обработка задержки после изменения размера
+        if (resizeDebounceInFrames > 0)
+        {
+            --resizeDebounceInFrames;
+            if (resizeDebounceInFrames == 0) // Время пересчитать точки
+            {
+                recalculateFftPoints();
+                // Запросим перерисовку после пересчета, даже если не было новых данных
+                if (!newDataAvailable) repaint(); // Перерисовать, если новых данных не было, но ресайз закончился
+            }
+            // Пока идет ресайз/задержка, не обновляем пики и не перерисовываем активно
+            return;
+        }
+
+        // Обновляем пики (применяем затухание), даже если не было новых данных FFT
         bool peakNeedsRepaint = false;
-        if (!newDataAvailable) {
-            for (size_t i = 0; i < peakHoldLevels.size(); ++i) {
-                float oldPeakDb = peakHoldLevels[i];
-                if (oldPeakDb > displayData[i] && oldPeakDb > mindB + 0.01f) {
-                    peakHoldLevels[i] = std::max(displayData[i], juce::Decibels::gainToDecibels(juce::Decibels::decibelsToGain(oldPeakDb) * peakHoldDecayFactor, mindB));
-                    if (!juce::approximatelyEqual(peakHoldLevels[i], oldPeakDb)) peakNeedsRepaint = true;
+        for (size_t i = 0; i < peakHoldLevels.size(); ++i)
+        {
+            float oldPeakDb = peakHoldLevels[i];
+            // Затухаем пик, если он выше основной линии и выше порога mindB
+            if (oldPeakDb > displayData[i] && oldPeakDb > mindB + 0.01f)
+            {
+                peakHoldLevels[i] = std::max(displayData[i], juce::Decibels::gainToDecibels(juce::Decibels::decibelsToGain(oldPeakDb) * peakHoldDecayFactor, mindB));
+                if (!juce::approximatelyEqual(peakHoldLevels[i], oldPeakDb)) {
+                    peakNeedsRepaint = true; // Отмечаем, что пик изменился
                 }
-                else if (oldPeakDb > mindB + 0.01f && peakHoldLevels[i] < displayData[i]) {
-                    peakHoldLevels[i] = displayData[i];
-                    if (!juce::approximatelyEqual(peakHoldLevels[i], oldPeakDb)) peakNeedsRepaint = true;
+            }
+            else if (oldPeakDb > mindB + 0.01f && peakHoldLevels[i] < displayData[i]) {
+                // Если пик упал ниже основной линии, устанавливаем его равным основной линии
+                peakHoldLevels[i] = displayData[i];
+                if (!juce::approximatelyEqual(peakHoldLevels[i], oldPeakDb)) {
+                    peakNeedsRepaint = true;
                 }
             }
         }
 
-        // Перерисовываем, если были новые данные или пики изменились
+        // Перерисовываем, если были новые данные ИЛИ если изменились пики
         if (newDataAvailable || peakNeedsRepaint) {
             repaint();
         }
     }
 
-    // --- Îáðàáîòêà ñëåäóþùåãî êàäðà äàííûõ èç FIFO ---
-    // Àäàïòèðîâàíî èç witte::SpectrumAnalyzer::drawNextFrame
+
+    // --- Обработка следующего кадра данных из FIFO ---
+    // Адаптировано из witte::SpectrumAnalyzer::drawNextFrame
+    void SpectrumAnalyzer::drawNextFrame()
+    {
+        bool newDataProcessed = false; // Флаг для индикации обработки новых данных FFT
+
+        // --- Обработка входного FIFO ---
+        while (processor.abstractFifoInput.getNumReady() >= MBRPAudioProcessor::fftSize) // Обрабатываем все доступные блоки
+        {
+            fftBufferInput.clear(); // Очищаем временный буфер для FFT
+            int start1, block1, start2, block2;
+            // Готовим FIFO к чтению
+            processor.abstractFifoInput.prepareToRead(MBRPAudioProcessor::fftSize, start1, block1, start2, block2);
+
+            // --- Копируем данные из FIFO процессора во временный буфер анализатора ---
+            const int audioFifoSize = processor.audioFifoInput.getNumSamples();
+            if (audioFifoSize > 0) { // Доп. проверка на размер буфера FIFO
+                if (block1 > 0) fftBufferInput.copyFrom(0, 0, processor.audioFifoInput.getReadPointer(0, start1 % audioFifoSize), block1);
+                if (block2 > 0) fftBufferInput.copyFrom(0, block1, processor.audioFifoInput.getReadPointer(0, start2 % audioFifoSize), block2);
+            }
+            // --- ---
+
+            // Сообщаем FIFO процессора, что мы прочитали данные
+            processor.abstractFifoInput.finishedRead(block1 + block2);
+
+            // Применяем окно Ханна
+            hannWindow.multiplyWithWindowingTable(fftBufferInput.getWritePointer(0), static_cast<size_t>(MBRPAudioProcessor::fftSize));
+            // Выполняем БПФ (только магнитуды)
+            fftInput.performFrequencyOnlyForwardTransform(fftBufferInput.getWritePointer(0));
+
+            // --- Усреднение результата FFT ---
+            {
+                juce::ScopedLock lockedForAvgUpdate(pathCreationLock);
+                // Вычитаем самый старый кадр из суммы (канал 0)
+                avgInput.addFrom(0, 0, avgInput.getReadPointer(avgInputPtr), avgInput.getNumSamples(), -1.0f);
+                // Нормализация для усреднения (делим на кол-во кадров)
+                float normFactor = 1.0f / (static_cast<float>(avgInput.getNumChannels() - 1));
+                avgInput.copyFrom(avgInputPtr, 0, fftBufferInput.getReadPointer(0), avgInput.getNumSamples(), normFactor);
+                // Добавляем новый нормализованный кадр к общей сумме (в канал 0)
+                avgInput.addFrom(0, 0, avgInput.getReadPointer(avgInputPtr), avgInput.getNumSamples());
+            }
+            // Передвигаем указатель на следующий слот усреднения
+            if (++avgInputPtr >= avgInput.getNumChannels()) avgInputPtr = 1;
+
+            newDataProcessed = true; // Отмечаем, что обработали новые данные
+        }
+
+        // --- Обработка выходного FIFO (Если используется) ---
+        // while (processor.abstractFifoOutput.getNumReady() >= MBRPAudioProcessor::fftSize) { /* ... */ }
+
+
+        // --- Обновление отображаемых данных, если были новые FFT ---
+        if (newDataProcessed)
+        {
+            auto numBins = avgInput.getNumSamples(); // fftSize / 2
+            std::vector<float> latestDbData(numBins); // Вектор для *текущих* dB
+
+            if (displayData.size() != numBins) displayData.resize(numBins);
+            if (peakHoldLevels.size() != numBins) peakHoldLevels.resize(numBins);
+
+            // Получаем указатель на усредненные магнитуды
+            const float* averagedMagnitudes = nullptr;
+            {
+                juce::ScopedLock lockedForAvgRead(pathCreationLock); // Блокировка на чтение
+                if (avgInput.getNumSamples() > 0) averagedMagnitudes = avgInput.getReadPointer(0);
+            }
+            if (averagedMagnitudes == nullptr) return; // Не удалось получить данные
+
+            // --- КОЭФФИЦИЕНТ УСИЛЕНИЯ (НАСТРОЙКА!) ---
+            const float gainAdjustment = -20000.0f; // <-- НАСТРОЙТЕ ЭТО!
+            const float gainMultiplier = juce::Decibels::decibelsToGain(gainAdjustment);
+            // -------------------------------------------
+
+            float currentFramePeak = mindB;
+
+            // 1. Вычисляем уровни дБ из УСРЕДНЕННЫХ магнитуд
+            for (size_t i = 0; i < numBins; ++i)
+            {
+                float finalMagnitude = averagedMagnitudes[i] * gainMultiplier;
+                latestDbData[i] = juce::Decibels::gainToDecibels(finalMagnitude, mindB);
+                if (latestDbData[i] > currentFramePeak) currentFramePeak = latestDbData[i];
+            }
+            peakDbLevel.store(currentFramePeak); // Обновляем общий пик
+
+            // 2. Обновляем displayData (EMA) и peakHoldLevels (Decay)
+            for (size_t i = 0; i < numBins; ++i)
+            {
+                float newValDb = latestDbData[i];
+                float oldDisplayDb = displayData[i];
+                float oldPeakDb = peakHoldLevels[i];
+                // EMA
+                displayData[i] = smoothingAlpha * newValDb + (1.0f - smoothingAlpha) * oldDisplayDb;
+                displayData[i] = std::max(mindB, displayData[i]);
+                // Peak Hold
+                if (newValDb > oldPeakDb) peakHoldLevels[i] = newValDb;
+                else peakHoldLevels[i] = std::max(displayData[i], juce::Decibels::gainToDecibels(juce::Decibels::decibelsToGain(oldPeakDb) * peakHoldDecayFactor, mindB));
+            }
+            // Перерисовка будет вызвана из timerCallback после этого метода
+        }
+    }
 
     //==============================================================================
-    // Ïåðåñ÷åò òî÷åê FFT <-> Ýêðàí (àäàïòèðîâàíî èç witte)
+    // Пересчет точек FFT <-> Экран (адаптировано из witte)
+    void SpectrumAnalyzer::recalculateFftPoints()
+    {
+        const auto bounds = getLocalBounds().toFloat();
+        const auto width = bounds.getWidth();
+        if (width <= 0) { fftPointsSize = 0; return; }
+
+        const auto sampleRate = static_cast<float> (processor.getSampleRate());
+        const auto fftSizeHalved = static_cast<int> (MBRPAudioProcessor::fftSize / 2);
+        if (sampleRate <= 0 || fftSizeHalved <= 0) { fftPointsSize = 0; return; } // Доп. проверки
+
+        const float minLogFreq = 20.0f;
+        const float maxLogFreq = sampleRate / 2.0f;
+        if (maxLogFreq <= minLogFreq) { fftPointsSize = 0; return; }
+        const float logRange = std::log(maxLogFreq / minLogFreq);
+
+        if (fftPoints.size() != MBRPAudioProcessor::fftSize) // Убедимся, что размер вектора достаточен
+            fftPoints.resize(MBRPAudioProcessor::fftSize);
+
+        fftPointsSize = 0;
+        int lastX = -1;
+
+        for (int i = 1; i < fftSizeHalved; ++i) // Начинаем с бина 1
+        {
+            const float freq = sampleRate * static_cast<float>(i) / static_cast<float>(MBRPAudioProcessor::fftSize);
+            if (freq < minLogFreq) continue;
+
+            const float logPos = std::log(freq / minLogFreq) / logRange;
+            const int x = juce::roundToInt(logPos * width);
+
+            if (x >= width) break; // Вышли за пределы
+
+            if (x > lastX) // Новая точка на экране
+            {
+                if (fftPointsSize > 0) fftPoints[fftPointsSize - 1].lastBinIndex = i - 1;
+                if (fftPointsSize < (int)fftPoints.size()) {
+                    fftPoints[fftPointsSize].firstBinIndex = i;
+                    fftPoints[fftPointsSize].x = x;
+                    fftPointsSize++;
+                    lastX = x;
+                }
+                else { jassertfalse; break; } // Ошибка размера вектора
+            }
+            if (fftPointsSize > 0) fftPoints[fftPointsSize - 1].lastBinIndex = i; // Обновляем последний бин
+        }
+        if (fftPointsSize > 0) { // Ограничиваем последний индекс
+            fftPoints[fftPointsSize - 1].lastBinIndex = std::min(fftPoints[fftPointsSize - 1].lastBinIndex, fftSizeHalved - 1);
+        }
+        DBG("Recalculated FFT points. Count: " << fftPointsSize << " for width: " << width);
+    }
 
     //==============================================================================
-    // Ñòàòè÷åñêàÿ ôóíêöèÿ ïîëó÷åíèÿ óðîâíÿ äëÿ òî÷êè ýêðàíà èç óñðåäíåííûõ ìàãíèòóä
+    // Статическая функция получения уровня для точки экрана из усредненных магнитуд
+    /*static*/ float SpectrumAnalyzer::getFftPointLevel(const float* averagedMagnitudes, const fftPoint& point)
+    {
+        float maxMagnitude = 0.0f;
+        const int numSamples = MBRPAudioProcessor::fftSize / 2;
+
+        for (int i = point.firstBinIndex; i <= point.lastBinIndex; ++i) {
+            if (i >= 0 && i < numSamples) { // Проверка границ
+                if (averagedMagnitudes[i] > maxMagnitude) maxMagnitude = averagedMagnitudes[i];
+            }
+        }
+        // Усиление gainAdjustment применяется в drawNextFrame перед конвертацией в dB
+        return juce::Decibels::gainToDecibels(maxMagnitude, mindB); // Конвертируем в dB здесь? Или передавать dB?
+        // Если усиление в drawNextFrame, то здесь просто конвертация.
+        // НО: В drawNextFrame уже конвертировали в latestDbData!
+        // Значит, getFftPointLevel сейчас не нужна, если drawSpectrumAndPeaks
+        // будет работать с displayData/peakHoldLevels напрямую.
+        // ОСТАВИМ пока, но возможно, она не используется.
+    }
 
     //==============================================================================
-    // Îñíîâíàÿ ôóíêöèÿ îòðèñîâêè
+    // Основная функция отрисовки
     void SpectrumAnalyzer::paint(juce::Graphics& g)
     {
         using namespace juce;
         g.fillAll(backgroundColour);
         auto bounds = getLocalBounds().toFloat();
         auto graphBounds = bounds.reduced(1.f);
+
+        // Пересчет точек, если окно было только что создано/изменено
+        if (fftPointsSize == 0 && getWidth() > 0) {
+            recalculateFftPoints();
+        }
 
         drawFrequencyGrid(g, graphBounds);
         drawGainScale(g, graphBounds);
@@ -138,13 +301,14 @@ namespace MBRP_GUI
     //==============================================================================
     void SpectrumAnalyzer::resized()
     {
-        // Óñòàíàâëèâàåì çàäåðæêó ïåðåñ÷åòà òî÷åê, ñàì ïåðåñ÷åò áóäåò â timerCallback
+        // Устанавливаем задержку пересчета точек, сам пересчет будет в timerCallback
         static constexpr int framesToWaitBeforePaintingAfterResizing = 5;
+        resizeDebounceInFrames = framesToWaitBeforePaintingAfterResizing;
         DBG("Resized called. Debounce set.");
     }
 
     //==============================================================================
-    // --- Ôóíêöèè îòðèñîâêè ñåòîê è øêàë ---
+    // --- Функции отрисовки сеток и шкал ---
     void SpectrumAnalyzer::drawFrequencyGrid(juce::Graphics& g, const juce::Rectangle<float>& bounds)
     {
         using namespace juce;
@@ -196,167 +360,163 @@ namespace MBRP_GUI
         }
     }
 
-    // --- Ôóíêöèÿ îòðèñîâêè ñïåêòðà è ïèêîâ ---
+    // --- Функция отрисовки спектра и пиков ---
     void SpectrumAnalyzer::drawSpectrumAndPeaks(juce::Graphics& g, const juce::Rectangle<float>& bounds)
     {
         using namespace juce;
         auto width = bounds.getWidth(); auto top = bounds.getY(); auto bottom = bounds.getBottom();
         auto left = bounds.getX(); auto right = bounds.getRight();
-        auto numBins = displayData.size(); // Èñïîëüçóåì displayData
+        auto numBins = processor.fftSize / 2; // Ожидаемый размер данных
         auto sampleRate = processor.getSampleRate();
 
-        // Ïðîâåðêà íà âàëèäíîñòü äàííûõ
-        if (numBins == 0 || peakHoldLevels.size() != numBins || sampleRate <= 0 || width <= 0) return;
+        // Базовые проверки
+        if (sampleRate <= 0 || width <= 0) return;
+        if (displayData.size() != numBins || peakHoldLevels.size() != numBins) return; // Размеры должны совпадать
 
-        // Âåêòîðû äëÿ õðàíåíèÿ òî÷åê êðèâûõ
+        // Проверка на рассчитанные точки для отрисовки (если используется recalculateFftPoints)
+        // Если используется прямой маппинг бинов на X, эта проверка не нужна
+        // if (fftPointsSize == 0) return;
+
+        // --- Потокобезопасное получение указателя на усредненные данные ---
+        // Нам НЕ НУЖЕН fftDataInput здесь, так как мы используем displayData и peakHoldLevels,
+        // которые обновляются в timerCallback. Убираем этот блок.
+        // const float* fftDataInput = nullptr;
+        // int actualNumBins = 0;
+        // {
+        //     juce::ScopedLock lockedForReading (pathCreationLock);
+        //     if (avgInput.getNumChannels() > 0 && avgInput.getNumSamples() > 0) {
+        //         fftDataInput = avgInput.getReadPointer(0);
+        //         actualNumBins = avgInput.getNumSamples();
+        //     }
+        // }
+        // if (fftDataInput == nullptr || actualNumBins != numBins) {
+        //     return; // Данные недоступны или неверного размера
+        // }
+        // --------------------------------------------------------------------
+
+        // Векторы для хранения точек кривых
         std::vector<Point<float>> spectrumPoints;
         std::vector<Point<float>> peakPointsVec;
-        spectrumPoints.reserve(numBins); // Ïðåäâàðèòåëüíîå âûäåëåíèå ïàìÿòè
+        spectrumPoints.reserve(numBins);
         peakPointsVec.reserve(numBins);
 
-        // Êîíñòàíòû äëÿ îáðàáîòêè Í×
-        const int firstBinToDraw = 2;           // Íà÷èíàåì ðèñîâàòü ñî 2-ãî áèíà (ïðîïóñêàåì DC è 1-é)
-        const float lowFreqRollOffEndBin = 5.0f;  //  (ðàññ÷èòûâàëîñü äëÿ 10.f)Äî êàêîãî áèíà ïðèìåíÿòü îñëàáëåíèå (ëîó)
+        // Константы для обработки НЧ
+        const int firstBinToDraw = 2;
+        const float lowFreqRollOffEndBin = 5.0f;
+        const float lowFreqStartAttenuation = 0.6f; // Подберите для нужного ослабления
 
-        // Äîáàâëÿåì íà÷àëüíûå òî÷êè âíèçó ñëåâà
+        // Добавляем начальные точки
         spectrumPoints.push_back({ left, bottom });
         peakPointsVec.push_back({ left, bottom });
 
-        // Ñîáèðàåì òî÷êè äëÿ îñíîâíîé (EMA) è ïèêîâîé (Peak Hold) ëèíèé
+        // Собираем точки для основной (EMA) и пиковой (Peak Hold) линий
         for (size_t i = firstBinToDraw; i < numBins; ++i)
         {
             float freq = static_cast<float>(i) * static_cast<float>(sampleRate) / static_cast<float>(MBRPAudioProcessor::fftSize);
-
-            // Îáðàáàòûâàåì òîëüêî ÷àñòîòû â âèäèìîì äèàïàçîíå
             if (freq >= minFreq && freq <= maxFreq)
             {
                 float x = left + frequencyToX(freq, width);
-                x = jlimit(left, right, x); // Îãðàíè÷èâàåì X ãðàíèöàìè
+                x = jlimit(left, right, x); // Ограничиваем X
 
-                float displayDb = displayData[i]; // Ñãëàæåííîå çíà÷åíèå äëÿ îñíîâíîé ëèíèè
-                float peakDb = peakHoldLevels[i]; // Ïèêîâîå çíà÷åíèå
+                float displayDb = displayData[i]; // Берем готовое значение из timerCallback
+                float peakDb = peakHoldLevels[i]; // Берем готовое значение из timerCallback
 
-                // --- Âèçóàëüíîå îñëàáëåíèå ñàìûõ íèçêèõ ÷àñòîò ---
-                // Ïðèìåíÿåì ê îáîèì çíà÷åíèÿì äëÿ êîíñèñòåíòíîñòè îòðèñîâêè
+                // --- Визуальное ослабление НЧ ---
                 float lowFreqAttenuation = 1.0f;
                 if (i < firstBinToDraw + lowFreqRollOffEndBin) {
-                    lowFreqAttenuation = juce::jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), 0.45f, 1.0f); // Îò 0.3 äî 1.0 (ëîó áûëî 0.3f)
-                    // Îñëàáëÿåì çíà÷åíèå dB îòíîñèòåëüíî mindB
+                    lowFreqAttenuation = juce::jmap(float(i), float(firstBinToDraw - 1), float(firstBinToDraw + lowFreqRollOffEndBin), lowFreqStartAttenuation, 1.0f);
                     displayDb = mindB + (displayDb - mindB) * lowFreqAttenuation;
                     peakDb = mindB + (peakDb - mindB) * lowFreqAttenuation;
                 }
-                // --------------------------------------------------
+                // --------------------------------
 
-                // Ìàïïèíã â Y-êîîðäèíàòû è îãðàíè÷åíèå ãðàíèöàìè
                 float yDisplay = jlimit(top, jmap(displayDb, mindB, maxdB, bottom, top), bottom);
                 float yPeak = jlimit(top, jmap(peakDb, mindB, maxdB, bottom, top), bottom);
 
-                // Äîáàâëÿåì òî÷êó äëÿ îñíîâíîé êðèâîé
                 spectrumPoints.push_back({ x, yDisplay });
 
-                // Äîáàâëÿåì òî÷êó äëÿ ïèêîâîé êðèâîé (ñ îïòèìèçàöèåé äëÿ âåðòèêàëüíûõ ëèíèé)
                 if (peakPointsVec.empty() || !juce::approximatelyEqual(x, peakPointsVec.back().x)) {
-                    peakPointsVec.push_back({ x, yPeak }); // Íîâàÿ X êîîðäèíàòà
+                    peakPointsVec.push_back({ x, yPeak });
                 }
                 else {
-                    // Òà æå X êîîðäèíàòà - áåðåì ñàìûé âûñîêèé ïèê (ìèíèìàëüíûé Y)
                     peakPointsVec.back().y = std::min(peakPointsVec.back().y, yPeak);
                 }
             }
-            // Ïðåðûâàåì öèêë, åñëè âûøëè äàëåêî çà ïðàâóþ ãðàíèöó
-            if (freq > maxFreq * 1.05) break;
+            if (freq > maxFreq * 1.05) break; // Оптимизация выхода из цикла
         }
-        // Äîáàâëÿåì êîíå÷íûå òî÷êè âíèçó ñïðàâà
+        // Добавляем конечные точки
         spectrumPoints.push_back({ right, bottom });
         peakPointsVec.push_back({ right, bottom });
 
-        // Ïðîâåðêà, äîñòàòî÷íî ëè òî÷åê äëÿ ðèñîâàíèÿ
+        // Проверка, есть ли что рисовать
         if (spectrumPoints.size() < 2) return;
 
-        // --- Ðèñóåì îñíîâíóþ êðèâóþ (EMA) ñ cubicTo ---
+        // --- Рисуем основную кривую (EMA) с cubicTo ---
         Path spectrumPath;
         spectrumPath.startNewSubPath(spectrumPoints[0]);
         for (size_t i = 1; i < spectrumPoints.size(); ++i) {
             const auto& p0 = spectrumPoints[i - 1];
             const auto& p1 = spectrumPoints[i];
-            // Êîíòðîëüíûå òî÷êè äëÿ êóáè÷åñêîé êðèâîé Áåçüå
             Point<float> cp1{ (p0.x + p1.x) * 0.5f, p0.y };
             Point<float> cp2{ (p0.x + p1.x) * 0.5f, p1.y };
-            spectrumPath.cubicTo(cp1, cp2, p1); // Ïëàâíàÿ ëèíèÿ
+            spectrumPath.cubicTo(cp1, cp2, p1);
         }
-        // Çàëèâêà ïîä îñíîâíîé êðèâîé
         g.setColour(spectrumFillColour);
         g.fillPath(spectrumPath);
-        // Îáâîäêà îñíîâíîé êðèâîé
         g.setColour(spectrumLineColour);
-        g.strokePath(spectrumPath, PathStrokeType(1.5f)); // Ãîëóáàÿ ëèíèÿ
+        g.strokePath(spectrumPath, PathStrokeType(1.5f));
 
-        // --- Ðèñóåì ïèêîâóþ êðèâóþ ñ lineTo ---
+        // --- Рисуем пиковую кривую с lineTo ---
         if (peakPointsVec.size() >= 2) {
             Path peakPath;
             peakPath.startNewSubPath(peakPointsVec[0]);
             for (size_t i = 1; i < peakPointsVec.size(); ++i) {
-                peakPath.lineTo(peakPointsVec[i]); // Ïðÿìàÿ ëèíèÿ äëÿ ïèêîâ
+                peakPath.lineTo(peakPointsVec[i]);
             }
             g.setColour(peakHoldLineColour);
-            g.strokePath(peakPath, PathStrokeType(1.0f)); // Æåëòîâàòàÿ òîíêàÿ ëèíèÿ
+            g.strokePath(peakPath, PathStrokeType(1.0f));
         }
 
-        // --- ÎÏÒÈÌÈÇÈÐÎÂÀÍÍÀß ÎÒÐÈÑÎÂÊÀ ÊÐÀÑÍÎÉ ËÈÍÈÈ (> 0 äÁ) ---
+        // --- Отрисовка красной линии (> 0 дБ) с проверкой по Y ---
         Path overZeroPath;
         bool isCurrentlyAboveZero = false;
-        float zeroDbY = jlimit(top, jmap(0.0f, mindB, maxdB, bottom, top), bottom); // Y íóëÿ
-
+        float zeroDbY = jlimit(top, jmap(0.0f, mindB, maxdB, bottom, top), bottom);
         std::vector<Point<float>> currentSegmentPoints;
 
-        // Èòåðèðóåì ïî òî÷êàì îñíîâíîé êðèâîé (spectrumPoints), òàê êàê îíè óæå ñîäåðæàò îñëàáëåííûå Y
-        for (size_t i = 1; i < spectrumPoints.size() - 1; ++i) // Ïðîïóñêàåì ïåðâóþ è ïîñëåäíþþ òî÷êó (îíè âñåãäà íà bottom)
+        // Итерируем по точкам основной кривой (spectrumPoints)
+        for (size_t i = 1; i < spectrumPoints.size() - 1; ++i)
         {
             const auto& currentPoint = spectrumPoints[i];
             const float y = currentPoint.y;
             const float x = currentPoint.x;
 
-            // --- ÏÐÎÂÅÐÊÀ ÏÎ Y êîîðäèíàòå ---
-            // Ìåíüøåå çíà÷åíèå Y îçíà÷àåò áîëåå âûñîêèé óðîâåíü íà ãðàôèêå
-            if (y <= zeroDbY) // Åñëè òî÷êà ÂÛØÅ èëè ÍÀ ëèíèè íóëÿ
+            // Проверяем по Y координате
+            if (y <= zeroDbY) // Точка ВЫШЕ или НА линии нуля
             {
-                if (!isCurrentlyAboveZero) // Íà÷àëî íîâîãî ñåãìåíòà > 0
-                {
+                if (!isCurrentlyAboveZero) { // Начало нового сегмента
                     isCurrentlyAboveZero = true;
                     currentSegmentPoints.clear();
-                    const auto& prevPoint = spectrumPoints[i - 1]; // Áåðåì ïðåäûäóùóþ òî÷êó
-
-                    // Åñëè ïðåäûäóùàÿ òî÷êà áûëà ÍÈÆÅ íóëÿ (y > zeroDbY)
-                    if (prevPoint.y > zeroDbY) {
-                        // Íàõîäèì òî÷êó ïåðåñå÷åíèÿ ñ zeroDbY ïî X (ïðîñòàÿ ëèíåéíàÿ èíòåðïîëÿöèÿ)
-                        float intersectX = prevPoint.x + (currentPoint.x - prevPoint.x) * (zeroDbY - prevPoint.y) / (currentPoint.y - prevPoint.y);
-                        intersectX = jlimit(left, intersectX, right); // Îãðàíè÷èâàåì
+                    const auto& prevPoint = spectrumPoints[i - 1];
+                    if (prevPoint.y > zeroDbY) { // Пересечение
+                        float intersectX = prevPoint.x + (x - prevPoint.x) * (zeroDbY - prevPoint.y) / (y - prevPoint.y);
+                        intersectX = jlimit(left, intersectX, right);
                         currentSegmentPoints.push_back({ intersectX, zeroDbY });
                     }
-                    else {
-                        // Åñëè ïðåäûäóùàÿ òî÷êà áûëà òîæå >= 0 (íà ëèíèè), íà÷èíàåì ñ íåå
-                        currentSegmentPoints.push_back(prevPoint);
-                    }
-                    currentSegmentPoints.push_back(currentPoint); // Äîáàâëÿåì òåêóùóþ òî÷êó
-                }
-                else // Ïðîäîëæåíèå ñåãìåíòà > 0
-                {
+                    else { currentSegmentPoints.push_back(prevPoint); }
                     currentSegmentPoints.push_back(currentPoint);
                 }
+                else { currentSegmentPoints.push_back(currentPoint); } // Продолжение
             }
-            else // Òåêóùàÿ òî÷êà ÍÈÆÅ íóëÿ (y > zeroDbY)
+            else // Текущая точка НИЖЕ нуля
             {
-                if (isCurrentlyAboveZero) // Êîíåö ñåãìåíòà > 0
-                {
+                if (isCurrentlyAboveZero) { // Конец сегмента
                     isCurrentlyAboveZero = false;
-                    const auto& prevPoint = spectrumPoints[i - 1]; // Ïðåäûäóùàÿ òî÷êà (áûëà <= zeroDbY)
-
-                    // Íàõîäèì òî÷êó ïåðåñå÷åíèÿ ñ zeroDbY
-                    float intersectX = prevPoint.x + (currentPoint.x - prevPoint.x) * (zeroDbY - prevPoint.y) / (currentPoint.y - prevPoint.y);
+                    const auto& prevPoint = spectrumPoints[i - 1];
+                    float intersectX = prevPoint.x + (x - prevPoint.x) * (zeroDbY - prevPoint.y) / (y - prevPoint.y);
                     intersectX = jlimit(left, intersectX, right);
-                    currentSegmentPoints.push_back({ intersectX, zeroDbY }); // Çàêàí÷èâàåì íà ëèíèè íóëÿ
+                    currentSegmentPoints.push_back({ intersectX, zeroDbY });
 
-                    // Äîáàâëÿåì ñåãìåíò â îáùèé ïóòü
+                    // Добавляем сегмент в общий путь
                     if (currentSegmentPoints.size() >= 2) {
                         overZeroPath.startNewSubPath(currentSegmentPoints[0]);
                         for (size_t p_idx = 1; p_idx < currentSegmentPoints.size(); ++p_idx) {
@@ -366,15 +526,10 @@ namespace MBRP_GUI
                         }
                     }
                 }
-                // Åñëè è òàê áûëè íèæå íóëÿ, íè÷åãî íå äåëàåì
             }
         }
-
-        // Îáðàáîòêà ïîñëåäíåãî ñåãìåíòà (åñëè çàêîí÷èëñÿ âûøå íóëÿ)
-        if (isCurrentlyAboveZero && currentSegmentPoints.size() >= 2)
-        {
-            // Äîáàâëÿåì ïîñëåäíþþ òî÷êó íà ïðàâîì êðàþ íà óðîâíå 0 äÁ? Èëè íà óðîâíå ïîñëåäíåé òî÷êè?
-            // Ëó÷øå çàêîí÷èòü íà ïîñëåäíåé ðåàëüíîé òî÷êå, à íå èñêóññòâåííî îïóñêàòü äî íóëÿ.
+        // Обработка последнего сегмента
+        if (isCurrentlyAboveZero && currentSegmentPoints.size() >= 2) {
             overZeroPath.startNewSubPath(currentSegmentPoints[0]);
             for (size_t p_idx = 1; p_idx < currentSegmentPoints.size(); ++p_idx) {
                 const auto& p0 = currentSegmentPoints[p_idx - 1]; const auto& p1 = currentSegmentPoints[p_idx];
@@ -382,16 +537,15 @@ namespace MBRP_GUI
                 overZeroPath.cubicTo(cp1, cp2, p1);
             }
         }
-
-        // Ðèñóåì ÂÅÑÜ êðàñíûé ïóòü ÎÄÍÈÌ âûçîâîì
+        // Финальная отрисовка красного пути
         if (!overZeroPath.isEmpty()) {
             g.setColour(overZeroDbLineColour);
             g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
         }
-        // --- ÊÎÍÅÖ ÁËÎÊÀ ÊÐÀÑÍÎÉ ËÈÍÈÈ ---
+        // --- КОНЕЦ БЛОКА КРАСНОЙ ЛИНИИ ---
     }
-    // --- Îòðèñîâêà ìàðêåðîâ êðîññîâåðà ---
-    // --- Ïðåîáðàçîâàíèå ÷àñòîòû â X ---
+
+    // --- Преобразование частоты в X ---
     float SpectrumAnalyzer::frequencyToX(float freq, float width) const
     {
         freq = juce::jlimit(minFreq, maxFreq, freq);
