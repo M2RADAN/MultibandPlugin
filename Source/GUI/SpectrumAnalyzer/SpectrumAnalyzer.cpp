@@ -154,7 +154,7 @@ namespace MBRP_GUI
             if (averagedMagnitudes == nullptr) return; 
 
 
-            const float gainAdjustment = -65.0f; 
+            
             const float gainMultiplier = juce::Decibels::decibelsToGain(gainAdjustment);
             // -------------------------------------------
 
@@ -259,9 +259,9 @@ namespace MBRP_GUI
     void SpectrumAnalyzer::paint(juce::Graphics& g)
     {
         using namespace juce;
-        g.fillAll(backgroundColour);
+        g.fillAll(ColorScheme::getAnalyzerBackgroundColor());
         auto bounds = getLocalBounds().toFloat();
-        auto graphBounds = bounds.reduced(1.f);
+        auto graphBounds = bounds.reduced(1.f, 5.f);
 
 
         if (fftPointsSize == 0 && getWidth() > 0) {
@@ -273,7 +273,7 @@ namespace MBRP_GUI
         drawSpectrumAndPeaks(g, graphBounds);
         //drawFrequencyMarkers(g, graphBounds);
 
-        g.setColour(peakTextColour);
+        g.setColour(ColorScheme::getAnalyzerPeakTextColor());
         auto peakFont = juce::Font(juce::FontOptions(12.0f)); g.setFont(peakFont);
         float currentPeak = peakDbLevel.load();
         String peakText = "Peak: " + ((currentPeak <= mindB + 0.01f) ? String("-inf dB") : String(currentPeak, 1) + " dB");
@@ -281,7 +281,7 @@ namespace MBRP_GUI
         juce::Rectangle<float> peakTextArea(graphBounds.getRight() - peakTextAreaWidth, graphBounds.getY(), peakTextAreaWidth, peakTextAreaHeight);
         g.drawText(peakText, peakTextArea.toNearestInt(), Justification::centredRight, false);
 
-        g.setColour(Colours::darkgrey);
+        g.setColour(ColorScheme::getComponentOutlineColor());
         g.drawRect(getLocalBounds(), 1.f);
     }
 
@@ -291,7 +291,7 @@ namespace MBRP_GUI
 
         static constexpr int framesToWaitBeforePaintingAfterResizing = 5;
         resizeDebounceInFrames = framesToWaitBeforePaintingAfterResizing;
-        DBG("Resized called. Debounce set.");
+        //DBG("Resized called. Debounce set.");
     }
 
     //==============================================================================
@@ -305,14 +305,14 @@ namespace MBRP_GUI
 
         float freqs[] = { 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
                           2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000 };
-        g.setColour(gridLineColour);
+        g.setColour(ColorScheme::getAnalyzerGridBaseColor().withAlpha(0.3f));
         for (float f : freqs) {
             float x = left + frequencyToX(f, width);
             if (x >= left && x <= right) g.drawVerticalLine(roundToInt(x), top, bottom);
         }
 
         float labelFreqs[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
-        g.setColour(gridTextColour);
+        g.setColour(ColorScheme::getScaleTextColor());
         auto freqLabelFont = juce::Font(juce::FontOptions(9.f)); g.setFont(freqLabelFont);
         for (float f : labelFreqs) {
             float x = left + frequencyToX(f, width);
@@ -332,14 +332,20 @@ namespace MBRP_GUI
         std::vector<float> levels; for (float db = maxdB; db >= mindB; db -= 6.0f) levels.push_back(db); levels.push_back(0.0f);
         std::sort(levels.begin(), levels.end()); levels.erase(std::unique(levels.begin(), levels.end(), [](float a, float b) { return approximatelyEqual(a, b); }), levels.end());
         auto labelFont = Font(FontOptions(9.f)); g.setFont(labelFont);
+        //coulours
+        const auto zeroLineCol = ColorScheme::getZeroDbLineBaseColor();
+        const auto gridLineCol = ColorScheme::getAnalyzerGridBaseColor();
+        const auto gridTextCol = ColorScheme::getScaleTextColor(); // Цвет текста шкалы
 
         for (float db : levels) {
             float y = jlimit(top, jmap(db, mindB, maxdB, bottom, top), bottom);
             bool isZero = approximatelyEqual(db, 0.0f); bool isMajor = isZero || (roundToInt(db) != 0 && roundToInt(db) % 12 == 0);
-            g.setColour(isZero ? zeroDbLineColour : (isMajor ? gridLineColour.brighter(0.2f) : gridLineColour));
+
+            g.setColour(isZero ? zeroLineCol.withAlpha(0.5f) : (isMajor ? gridLineCol.brighter(0.2f).withAlpha(0.4f) : gridLineCol.withAlpha(0.3f)));
             g.drawHorizontalLine(roundToInt(y), left, right);
+
             if (isMajor || db == maxdB || db == mindB) {
-                g.setColour(gridTextColour); String str = String(roundToInt(db)); if (db > 0.01f && !str.startsWithChar('+')) str = "+" + str;
+                g.setColour(gridTextCol); String str = String(roundToInt(db)); if (db > 0.01f && !str.startsWithChar('+')) str = "+" + str;
                 float textW = getTextLayoutWidth(str, labelFont);
                 g.drawText(str, roundToInt(left + 4.f), roundToInt(y - 5.f), roundToInt(textW), 10, Justification::centredLeft);
                 g.drawText(str, roundToInt(right - textW - 4.f), roundToInt(y - 5.f), roundToInt(textW), 10, Justification::centredRight);
@@ -372,7 +378,11 @@ namespace MBRP_GUI
 
         spectrumPoints.push_back({ left, bottom });
         peakPointsVec.push_back({ left, bottom });
-
+        //colour
+        const auto spectrumFillBaseCol = ColorScheme::getSpectrumFillBaseColor();
+        const auto spectrumLineCol = ColorScheme::getSpectrumLineColor();
+        const auto peakHoldLineBaseCol = ColorScheme::getPeakHoldLineBaseColor();
+        const auto overZeroLineCol = ColorScheme::getOverZeroDbLineColor();
 
         for (size_t i = firstBinToDraw; i < numBins; ++i)
         {
@@ -433,11 +443,14 @@ namespace MBRP_GUI
             spectrumPath.cubicTo(cp1, cp2, p1);
         }
 
-        g.setColour(spectrumFillColour);
+        // Заливка с альфой
+        g.setColour(spectrumFillBaseCol.withAlpha(0.2f));
         g.fillPath(spectrumPath);
 
-        g.setColour(spectrumLineColour);
+        // Линия спектра
+        g.setColour(spectrumLineCol);
         g.strokePath(spectrumPath, PathStrokeType(1.5f));
+
 
 
         if (peakPointsVec.size() >= 2) {
@@ -446,7 +459,7 @@ namespace MBRP_GUI
             for (size_t i = 1; i < peakPointsVec.size(); ++i) {
                 peakPath.lineTo(peakPointsVec[i]);
             }
-            g.setColour(peakHoldLineColour);
+            g.setColour(peakHoldLineBaseCol.withAlpha(0.7f));
             g.strokePath(peakPath, PathStrokeType(1.0f)); 
         }
 
@@ -531,7 +544,7 @@ namespace MBRP_GUI
 
 
         if (!overZeroPath.isEmpty()) {
-            g.setColour(overZeroDbLineColour);
+            g.setColour(overZeroLineCol);
             g.strokePath(overZeroPath, juce::PathStrokeType(1.5f));
         }
 

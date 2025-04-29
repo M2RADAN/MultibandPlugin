@@ -10,77 +10,6 @@ void ControlBar::resized() {
     analyzerButton.setBounds(bounds.removeFromLeft(50).withTrimmedTop(4).withTrimmedLeft(4));
     // TODO: Добавить функционал кнопке analyzerButton
 }
-// ---------------------------
-
-// --- AnalyzerOverlay Implementation ---
-//namespace MBRP_GUI
-//{
-//    AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover) :
-//        lowMidXoverParam(lowXover), midHighXoverParam(midXover),
-//        lastLowMidFreq(lowXover.get() + 1.f), lastMidHighFreq(midXover.get() + 1.f)
-//    {
-//        setInterceptsMouseClicks(false, false);
-//        startTimerHz(30);
-//    }
-//
-//    void AnalyzerOverlay::paint(juce::Graphics& g) {
-//        drawCrossoverLines(g, getLocalBounds());
-//    }
-//
-//    void AnalyzerOverlay::timerCallback() {
-//        float currentLowMid = lowMidXoverParam.get();
-//        float currentMidHigh = midHighXoverParam.get();
-//        if (!juce::approximatelyEqual(currentLowMid, lastLowMidFreq) || !juce::approximatelyEqual(currentMidHigh, lastMidHighFreq)) {
-//            lastLowMidFreq = currentLowMid;
-//            lastMidHighFreq = currentMidHigh;
-//            repaint();
-//        }
-//    }
-//
-//    void AnalyzerOverlay::resized() { repaint(); }
-//
-//    juce::Rectangle<int> AnalyzerOverlay::getAnalysisArea(juce::Rectangle<int> bounds) const {
-//        bounds.reduce(1, 5);
-//        return bounds;
-//    }
-//
-//    template<typename FloatType>
-//    static FloatType mapFreqToXLog(FloatType freq, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
-//        freq = juce::jlimit(minF, maxF, freq);
-//        if (maxF / minF <= 1.0f || freq <= 0) return left;
-//        return left + width * (std::log(freq / minF) / std::log(maxF / minF));
-//    }
-//
-//    void AnalyzerOverlay::drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds) {
-//        using namespace juce;
-//        auto analysisArea = getAnalysisArea(bounds).toFloat();
-//        const float top = analysisArea.getY();
-//        const float bottom = analysisArea.getBottom();
-//        const float left = analysisArea.getX();
-//        const float width = analysisArea.getWidth();
-//        const float right = analysisArea.getRight();
-//        const float minLogFreq = 20.0f;
-//        const float maxLogFreq = 20000.0f;
-//
-//        float lowMidFreq = lowMidXoverParam.get();
-//        float midHighFreq = midHighXoverParam.get();
-//        float lowMidX = mapFreqToXLog(lowMidFreq, left, width, minLogFreq, maxLogFreq);
-//        float midHighX = mapFreqToXLog(midHighFreq, left, width, minLogFreq, maxLogFreq);
-//
-//        g.setColour(Colours::orange.withAlpha(0.7f));
-//        if (lowMidX >= left && lowMidX <= right) g.drawVerticalLine(roundToInt(lowMidX), top, bottom);
-//
-//        g.setColour(Colours::cyan.withAlpha(0.7f)); 
-//        if (midHighX >= left && midHighX <= right) g.drawVerticalLine(roundToInt(midHighX), top, bottom);
-//
-//       
-//        g.setColour(Colours::orange);
-//        if (lowMidX >= left && lowMidX <= right) g.fillEllipse(lowMidX - 2.f, top, 4.f, 4.f);
-//        g.setColour(Colours::cyan);
-//        if (midHighX >= left && midHighX <= right) g.fillEllipse(midHighX - 2.f, top, 4.f, 4.f);
-//    }
-//} // End namespace MBRP_GUI
-//// ---------------------------
 
 //==============================================================================
 MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
@@ -99,33 +28,42 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     addAndMakeVisible(analyzerOverlay);
     addAndMakeVisible(bandSelectControls);
 
-    auto setupStandardSlider = [&](juce::Slider& slider, juce::Label& label, const juce::String& labelText,
-        juce::Slider::SliderStyle style, juce::Colour colour) {
-            slider.setSliderStyle(style);
-            slider.setTextBoxStyle(juce::Slider::TextBoxBelow, true, 80, 20);
-            slider.setPopupDisplayEnabled(true, false, this);
-            slider.setColour(juce::Slider::thumbColourId, colour);
-            slider.setColour(juce::Slider::trackColourId, colour.darker(0.5f));
-            slider.setName(labelText);
-            addAndMakeVisible(slider);
-            label.setText(labelText, juce::dontSendNotification);
-            label.setJustificationType(juce::Justification::centred);
-            label.attachToComponent(&slider, false);
-            label.setFont(juce::Font(juce::FontOptions(12.0f)));
-            label.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-            addAndMakeVisible(label);
+    auto setupStandardSlider = [&](juce::Slider& slider, juce::Label& label, const juce::String& labelText) {
+        slider.setSliderStyle(juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow, true, 80, 20);
+        slider.setPopupDisplayEnabled(true, false, this);
+        slider.setColour(juce::Slider::thumbColourId, ColorScheme::getSliderThumbColor());
+        slider.setColour(juce::Slider::trackColourId, ColorScheme::getSliderTrackColor());
+        // --- Устанавливаем цвет текста в TextBox ---
+        slider.setColour(juce::Slider::textBoxTextColourId, ColorScheme::getSecondaryTextColor()); // Используем менее яркий серый цвет
+        // Устанавливаем цвет рамки TextBox (можно сделать чуть темнее фона)
+        slider.setColour(juce::Slider::textBoxOutlineColourId, ColorScheme::getSliderTrackColor().darker(0.2f));
+        // Цвет фона TextBox можно оставить по умолчанию или установить явно
+        // slider.setColour(juce::Slider::textBoxBackgroundColourId, ColorScheme::getBackgroundColor().darker(0.05f));
+
+        slider.setName(labelText);
+        addAndMakeVisible(slider);
+        label.setText(labelText, juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.setFont(juce::Font(12.0f));
+        label.setColour(juce::Label::textColourId, ColorScheme::getTextColor());
+        addAndMakeVisible(label);
         };
 
-    setupStandardSlider(lowMidCrossoverSlider, lowMidCrossoverLabel, "Low / Mid", juce::Slider::LinearHorizontal, juce::Colours::lightgrey);
-    setupStandardSlider(midHighCrossoverSlider, midHighCrossoverLabel, "Mid / High", juce::Slider::LinearHorizontal, juce::Colours::lightgrey);
-
+    setupStandardSlider(lowMidCrossoverSlider, lowMidCrossoverLabel, "Low / Mid");
+    setupStandardSlider(midHighCrossoverSlider, midHighCrossoverLabel, "Mid / High");
     panSlider.setPopupDisplayEnabled(true, false, this);
+    // Устанавливаем цвета роторного слайдера через LookAndFeel ID
+    panSlider.setColour(juce::Slider::rotarySliderFillColourId, ColorScheme::getSliderFillColor());
+    panSlider.setColour(juce::Slider::rotarySliderOutlineColourId, ColorScheme::getSliderBorderColor());
+    panSlider.setColour(juce::Slider::thumbColourId, ColorScheme::getSliderThumbColor()); // Цвет указателя
     addAndMakeVisible(panSlider);
-    panLabel.setText("Pan", juce::dontSendNotification);
+
+    panLabel.setText("Pan", juce::dontSendNotification); // Устанавливаем текст "Pan"
     panLabel.setJustificationType(juce::Justification::centred);
-    panLabel.attachToComponent(&panSlider, false);
-    panLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
-    panLabel.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+    // panLabel.attachToComponent(&panSlider, false); // Не прикрепляем, разместим вручную
+    panLabel.setFont(juce::Font(14.0f, juce::Font::bold)); // Делаем метку "Pan" заметнее
+    panLabel.setColour(juce::Label::textColourId, ColorScheme::getDarkTextColor()); // Используем более темный цвет
     addAndMakeVisible(panLabel);
 
     bandSelectControls.onBandSelected = [this](int bandIndex) { updatePanAttachment(bandIndex); };
@@ -142,30 +80,56 @@ MBRPAudioProcessorEditor::~MBRPAudioProcessorEditor() {
 }
 
 void MBRPAudioProcessorEditor::paint(juce::Graphics& g) {
-    g.fillAll(lnf.findColour(juce::ResizableWindow::backgroundColourId));
+    g.fillAll(ColorScheme::getBackgroundColor());
 }
 
 void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     int padding = 10;
-    controlBar.setBounds(bounds.removeFromTop(32));
-    int analyzerHeight = 350;
-    auto analyzerArea = bounds.removeFromTop(analyzerHeight);
+    int controlBarHeight = 32; // Убрал, если ControlBar не используется активно
+    // controlBar.setBounds(bounds.removeFromTop(controlBarHeight));
+
+    int analyzerHeight = 300; // Немного уменьшим анализатор
+    auto analyzerArea = bounds.removeFromTop(analyzerHeight).reduced(padding, 0); // Добавим отступы по бокам
     analyzer.setBounds(analyzerArea);
     analyzerOverlay.setBounds(analyzerArea);
+
+    // Область под анализатором
     auto controlsArea = bounds.reduced(padding);
-    controlsArea.removeFromTop(padding);
-    int crossoverHeight = 50;
-    auto crossoverArea = controlsArea.removeFromTop(crossoverHeight);
-    int crossoverWidth = crossoverArea.getWidth() / 2;
-    lowMidCrossoverSlider.setBounds(crossoverArea.removeFromLeft(crossoverWidth).reduced(padding / 2));
-    midHighCrossoverSlider.setBounds(crossoverArea.reduced(padding / 2));
-    controlsArea.removeFromTop(padding);
+    controlsArea.removeFromTop(padding); // Отступ сверху
+
+    // Слайдеры кроссоверов
+    int labelHeight = 15;
+    int sliderHeight = 40;
+    int crossoverControlHeight = labelHeight + sliderHeight;
+    auto crossoverArea = controlsArea.removeFromTop(crossoverControlHeight);
+    int crossoverWidth = crossoverArea.getWidth() / 2 - padding / 2;
+
+    auto lowMidArea = crossoverArea.removeFromLeft(crossoverWidth);
+    lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
+    lowMidCrossoverSlider.setBounds(lowMidArea);
+
+    crossoverArea.removeFromLeft(padding); // Отступ между слайдерами
+
+    auto midHighArea = crossoverArea;
+    midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
+    midHighCrossoverSlider.setBounds(midHighArea);
+
+    controlsArea.removeFromTop(padding); // Отступ
+
+    // Кнопки выбора полосы
     int bandSelectHeight = 30;
-    bandSelectControls.setBounds(controlsArea.removeFromTop(bandSelectHeight));
-    controlsArea.removeFromTop(padding / 2);
+    bandSelectControls.setBounds(controlsArea.removeFromTop(bandSelectHeight).reduced(crossoverWidth / 2, 0)); // Центрируем кнопки
+
+    controlsArea.removeFromTop(padding * 2); // Больший отступ перед Pan
+
+    // Область Pan
     auto panArea = controlsArea;
-    panSlider.setBounds(panArea.reduced(panArea.getWidth() / 4, padding));
+    int panLabelHeight = 20; // Высота для метки "Pan"
+    // Размещаем метку "Pan" ВНИЗУ области panArea
+    panLabel.setBounds(panArea.removeFromBottom(panLabelHeight));
+    // Оставшаяся область для слайдера, центрируем его
+    panSlider.setBounds(panArea.reduced(panArea.getWidth() / 3, padding)); // Делаем слайдер покрупнее и центрируем
 }
 
 void MBRPAudioProcessorEditor::timerCallback() {
@@ -174,26 +138,48 @@ void MBRPAudioProcessorEditor::timerCallback() {
 
 void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) {
     juce::String paramId;
-    juce::String labelText;
-    juce::Colour color;
+    // juce::String labelText; // Больше не нужен специфичный текст метки
+    juce::Colour bandColour; // Цвет для слайдера
+
     switch (bandIndex) {
-    case 0: paramId = "lowPan"; labelText = "Low Pan"; color = juce::Colours::orange; break;
-    case 1: paramId = "midPan"; labelText = "Mid Pan"; color = juce::Colours::lightgreen; break;
-    case 2: paramId = "highPan"; labelText = "High Pan"; color = juce::Colours::cyan; break;
+    case 0:
+        paramId = "lowPan";
+        bandColour = ColorScheme::getLowBandColor();
+        break;
+    case 1:
+        paramId = "midPan";
+        bandColour = ColorScheme::getMidBandColor();
+        break;
+    case 2:
+        paramId = "highPan";
+        bandColour = ColorScheme::getHighBandColor();
+        break;
     default: jassertfalse; return;
     }
+
     auto* targetParam = processorRef.getAPVTS().getParameter(paramId);
     auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(targetParam);
     jassert(rangedParam != nullptr); if (!rangedParam) return;
-    panSlider.changeParam(rangedParam);
-    panSlider.labels.clear();
-    panSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, true, 60, 20);
-    panSlider.labels.add({ 0.0f, "L" }); panSlider.labels.add({ 0.5f, "C" }); panSlider.labels.add({ 1.0f, "R" });
+
+    panSlider.changeParam(rangedParam); // Обновляем параметр слайдера
+
+    // --- Убираем настройку текстового поля и внутренних меток ---
+    panSlider.labels.clear(); // Очищаем старые (на всякий случай)
+    panSlider.labels.add({ 0.0f, "L" }); // 0.0 соответствует значению -1.0 панорамы
+    panSlider.labels.add({ 0.5f, "C" }); // 0.5 соответствует значению 0.0 панорамы
+    panSlider.labels.add({ 1.0f, "R" }); // 1.0 соответствует значению +1.0 панорамы
+    // -----------------------------------------
+
+    panSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); // Текстовое поле все еще не нужно
+
     panAttachment.reset();
     panAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), paramId, panSlider);
-    panLabel.setText(labelText, juce::dontSendNotification);
-    panSlider.setColour(juce::Slider::thumbColourId, color);
-    panSlider.setColour(juce::Slider::rotarySliderFillColourId, color.withAlpha(0.7f));
+
+    panLabel.setText("Pan", juce::dontSendNotification); // Внешняя метка остается "Pan"
+
+    panSlider.setColour(juce::Slider::thumbColourId, bandColour);
+    panSlider.setColour(juce::Slider::rotarySliderFillColourId, bandColour.withAlpha(0.7f));
+    panSlider.setColour(juce::Slider::rotarySliderOutlineColourId, bandColour.darker(0.3f));
     panSlider.repaint();
 }
 

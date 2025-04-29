@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include <functional> 
+#include "../Source/GUI/LookAndFeel.h"
 
 namespace juce { class AudioParameterFloat; }
 
@@ -38,7 +39,8 @@ namespace MBRP_GUI
         void resized() override;
         void timerCallback() override;
 
-
+        void mouseMove(const juce::MouseEvent& event) override; // <-- Добавлено
+        void mouseExit(const juce::MouseEvent& event) override; // <-- Добавлено
         void mouseDown(const juce::MouseEvent& event) override;
         void mouseDrag(const juce::MouseEvent& event) override;
         void mouseUp(const juce::MouseEvent& event) override;
@@ -48,7 +50,7 @@ namespace MBRP_GUI
     private:
 
         void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<float> graphBounds);
-
+        void drawHoverHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds);
         float xToFrequency(float x, const juce::Rectangle<float>& graphBounds) const;
 
         juce::Rectangle<float> getGraphBounds() const;
@@ -60,14 +62,22 @@ namespace MBRP_GUI
 
         enum class DraggingState { None, DraggingLowMid, DraggingMidHigh };
         DraggingState currentDraggingState{ DraggingState::None };
-        const float dragTolerance = 5.0f;
+
+        enum class HoverState { None, HoveringLowMid, HoveringMidHigh }; // <-- Добавлено
+        HoverState currentHoverState{ HoverState::None };                // <-- Добавлено
+        HoverState lastHoverStateForColor { HoverState::None };
+        const float dragTolerance = 20.0f;
+        const float highlightRectWidth = 20.0f;  // change appropriatly
+
+        float currentHighlightAlpha = 0.0f;  // <-- Добавлено: Текущая прозрачность
+        float targetHighlightAlpha = 0.0f;   // <-- Добавлено: Целевая прозрачность
+        const float alphaAnimationSpeed = 0.2f; // <-- Добавлено: Скорость (0.0 до 1.0, чем больше, тем быстрее)
+        const float targetAlphaValue = 0.35f; // <-- Добавлено: Максимальная альфа подсветки
 
         static constexpr float minLogFreq = 20.0f;
         static constexpr float maxLogFreq = 20000.0f;
 
 
-        const juce::Colour crossoverLineColour{ juce::Colours::orange };
-        const juce::Colour crossoverLineColour2{ juce::Colours::cyan };
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyzerOverlay)
     };

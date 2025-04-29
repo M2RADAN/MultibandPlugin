@@ -26,15 +26,15 @@ void RotarySliderWithLabels::paint(juce::Graphics& g)
     auto sliderBounds = getSliderBounds(); // Get bounds for the rotary part
     auto localBounds = getLocalBounds();   // Get total component bounds
 
-    // --- Draw Title ---
-    // Use FontOptions
-    auto titleFont = juce::Font(juce::FontOptions(static_cast<float>(getTextHeight() + 1), Font::bold)); // Slightly larger/bold
-    g.setColour(ColorScheme::getTitleColor());
-    g.setFont(titleFont);
-    // Draw title centered at the top
-    g.drawFittedText(getName(),
-        localBounds.removeFromTop(getTextHeight() + 4), // Allocate space for title
-        Justification::centredBottom, 1);
+    //// --- Draw Title ---
+    //// Use FontOptions
+    //auto titleFont = juce::Font(juce::FontOptions(static_cast<float>(getTextHeight() + 1), Font::bold)); // Slightly larger/bold
+    //g.setColour(ColorScheme::getTitleColor());
+    //g.setFont(titleFont);
+    //// Draw title centered at the top
+    //g.drawFittedText(getName(),
+    //    localBounds.removeFromTop(getTextHeight() + 4), // Allocate space for title
+    //    Justification::centredBottom, 1);
 
     // --- Delegate rotary drawing to LookAndFeel ---
     getLookAndFeel().drawRotarySlider(g,
@@ -79,8 +79,8 @@ void RotarySliderWithLabels::paint(juce::Graphics& g)
 
         // --- Adjust bounds to prevent going off-screen ---
         // Simple horizontal check:
-        textBounds.setX(juce::jmax(0.0f, textBounds.getX())); // Don't go left of 0
-        textBounds.setRight(juce::jmin(static_cast<float>(localBounds.getWidth()), textBounds.getRight())); // Don't go right of component width
+        //textBounds.setX(juce::jmax(0.0f, textBounds.getX())); // Don't go left of 0
+        //textBounds.setRight(juce::jmin(static_cast<float>(localBounds.getWidth()), textBounds.getRight())); // Don't go right of component width
 
         // Draw the label text
         g.drawFittedText(str, textBounds.toNearestInt(), Justification::centred, 1);
@@ -103,37 +103,72 @@ juce::Rectangle<int> RotarySliderWithLabels::getSliderBounds() const
     juce::Rectangle<int> r;
     r.setSize(size, size);
     // Center the square within the remaining bounds horizontally, place it at the top vertically
-    r.setCentre(bounds.getCentreX(), bounds.getY() + size / 2);
+    r.setCentre(bounds.getCentre()); // Центрируем по вертикали и горизонтали
 
     return r;
 }
 
 juce::String RotarySliderWithLabels::getDisplayString() const
 {
-    // Handle choice parameters first
+    // --- Специальная обработка для Pan ---
+    // Проверяем по имени параметра или по суффиксу, если он уникален для Pan
+    bool isPanSlider = (param != nullptr && param->getName(100).containsIgnoreCase("Pan"));
+    // Или можно проверить по ID, если они известны:
+    // bool isPanSlider = (param != nullptr && (param->paramID == "lowPan" || param->paramID == "midPan" || param->paramID == "highPan"));
+
+    if (isPanSlider)
+    {
+        float value = static_cast<float>(getValue()); // Текущее значение от -1.0 до 1.0
+
+        // Проверяем на центр с небольшим допуском
+        if (std::abs(value) < 0.01f) {
+            return "C"; // Центр
+        }
+        else {
+            // Вычисляем процент и направление
+            int percentage = static_cast<int>(std::round(std::abs(value) * 100.0f));
+            if (value < 0.0f) {
+                return "L" + juce::String(percentage); // Лево
+            }
+            else {
+                return "R" + juce::String(percentage); // Право
+            }
+        }
+    }
+    // --- Конец специальной обработки для Pan ---
+
+
+    // --- Стандартная обработка для других типов параметров ---
     if (auto* choiceParam = dynamic_cast<juce::AudioParameterChoice*>(param))
         return choiceParam->getCurrentChoiceName();
 
-    // Handle float parameters
     if (auto* floatParam = dynamic_cast<juce::AudioParameterFloat*>(param))
     {
-        float value = static_cast<float>(getValue()); // Use float for calculations
+        float value = static_cast<float>(getValue());
         bool addK = false;
 
-        // Check if suffix is needed and value is large (for frequency etc.)
-        if (suffix.isNotEmpty() && suffix.containsIgnoreCase("Hz")) // Example check
-            addK = MBRP_GUI::truncateKiloValue(value); // Assuming this helper exists
+        // Используем оригинальную логику MBRP_GUI::truncateKiloValue
+        if (suffix.isNotEmpty() && suffix.containsIgnoreCase("Hz") && value >= 1000.0f) {
+            addK = MBRP_GUI::truncateKiloValue(value); // Эта функция должна делить value на 1000, если оно >= 1000
+        }
 
-        // Determine decimal places: 0 if 'k' is added, 1 or 2 otherwise?
-        int decimalPlaces = addK ? 1 : 0; // Adjust as needed
-        // Special handling for pan?
-        if (getName().containsIgnoreCase("Pan")) decimalPlaces = 0; // No decimals for pan usually
+        // Определяем количество знаков после запятой
+        int decimalPlaces = 0;
+        if (!addK && suffix.containsIgnoreCase("Hz")) {
+            // Без "k" для Hz - обычно целые числа
+            decimalPlaces = 0;
+        }
+        else if (addK) {
+            // С "k" - один знак после запятой
+            decimalPlaces = 1;
+        }
+        // Добавьте другие условия для других суффиксов, если нужно
 
         juce::String str = juce::String(value, decimalPlaces);
 
         if (suffix.isNotEmpty())
         {
-            str << " "; // Add space before suffix
+            str << " ";
             if (addK)
                 str << "k";
             str << suffix;
@@ -141,8 +176,8 @@ juce::String RotarySliderWithLabels::getDisplayString() const
         return str;
     }
 
-    // Fallback for other parameter types (shouldn't happen with current usage)
-    jassertfalse;
+    // Fallback
+    jassertfalse; // Не должно происходить для известных типов
     return juce::String(getValue());
 }
 
