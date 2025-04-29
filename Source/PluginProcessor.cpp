@@ -8,32 +8,28 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-//==============================================================================
-// Используем старый синтаксис конструктора AudioParameterFloat (JUCE 6)
 juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createParameterLayout()
 {
     APVTS::ParameterLayout layout;
     using namespace juce;
 
-    // Определяем ID параметров
     const ParameterID lowMidCrossoverParamID{ "lowMidCrossover", 1 };
     const ParameterID midHighCrossoverParamID{ "midHighCrossover", 1 };
     const ParameterID lowPanParamID{ "lowPan", 1 };
     const ParameterID midPanParamID{ "midPan", 1 };
     const ParameterID highPanParamID{ "highPan", 1 };
 
-    // Определяем диапазоны
     auto lowMidRange = NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.25f);
     auto midHighRange = NormalisableRange<float>(500.0f, 20000.0f, 1.0f, 0.25f);
     auto panRange = NormalisableRange<float>(-1.0f, 1.0f, 0.01f);
 
-    // Определяем функции преобразования текста
-    auto freqValueToText = [](float v, int /*maxLength*/) { return juce::String(v, 0) + " Hz"; };
-    auto kHzValueToText = [](float v, int /*maxLength*/) {
+
+    auto freqValueToText = [](float v, int ) { return juce::String(v, 0) + " Hz"; };
+    auto kHzValueToText = [](float v, int ) {
         return (v < 1000.f) ? juce::String(v, 0) + " Hz"
             : juce::String(v / 1000.f, 1) + " kHz";
         };
-    auto panValueToText = [](float v, int /*maxLength*/) {
+    auto panValueToText = [](float v, int ) {
         if (std::abs(v) < 0.01f) return String("C");
         float percentage = std::abs(v) * 100.0f;
         if (v < 0.0f) return String("L") + String(percentage, 0);
@@ -43,11 +39,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
         if (text.compareIgnoreCase("C") == 0 || text.isEmpty()) return 0.0f;
         if (text.startsWithIgnoreCase("L")) return juce::jlimit(-1.0f, 0.0f, -text.substring(1).getFloatValue() / 100.0f);
         if (text.startsWithIgnoreCase("R")) return juce::jlimit(0.0f, 1.0f, text.substring(1).getFloatValue() / 100.0f);
-        float val = text.getFloatValue(); // Убрали &isNumeric
+        float val = text.getFloatValue(); 
         return juce::jlimit(-1.0f, 1.0f, val);
         };
 
-    // Добавляем параметры
+
     layout.add(std::make_unique<AudioParameterFloat>(
         lowMidCrossoverParamID, "Low-Mid Freq", lowMidRange, 500.0f,
         "Hz", AudioProcessorParameter::genericParameter, freqValueToText, nullptr
@@ -69,54 +65,38 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
         "%L/R", AudioProcessorParameter::genericParameter, panValueToText, panTextToValue
     ));
 
-    // Если нужен Output Gain, раскомментируйте и настройте:
-    // const ParameterID outGainParamID { "OutGain", 1 };
-    // auto gainRange = NormalisableRange<float>(-24.0f, 24.0f, 0.1f, 1.0f);
-    // auto gainValueToText = [](float v, int) { return String(v, 1) + " dB"; };
-    // auto gainTextToValue = [](const String& t) { return t.getFloatValue(); };
-    // layout.add(std::make_unique<AudioParameterFloat>(
-    //     outGainParamID, "Output Gain", gainRange, 0.0f,
-    //     "dB", AudioProcessorParameter::genericParameter, gainValueToText, gainTextToValue
-    // ));
-
     return layout;
 }
 
 MBRPAudioProcessor::MBRPAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-    : AudioProcessor(BusesProperties() // Инициализация базового класса
+    : AudioProcessor(BusesProperties()
 #if ! JucePlugin_IsMidiEffect
 #if ! JucePlugin_IsSynth
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
 #endif
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-    ) // <-- ЗАПЯТАЯ УБРАНА
-#else // Для случая, когда JucePlugin_PreferredChannelConfigurations определен
-    : AudioProcessor() // <-- Инициализация базового класса для этого случая (пример)
-    // Убедитесь, что это правильная инициализация для вашего случая
+    ) 
+#else 
+    : AudioProcessor()
+
 #endif
-// Здесь мог бы быть список инициализации других членов класса через запятую,
-// но у вас он пуст, т.к. apvts инициализируется в теле.
-{ // Тело конструктора начинается здесь
-    // Инициализация APVTS
+
+{ 
+
     apvts.reset(new juce::AudioProcessorValueTreeState(*this, nullptr, "Parameters", createParameterLayout()));
 
-    // Получаем указатели на параметры
+
     lowMidCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("lowMidCrossover"));
     midHighCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("midHighCrossover"));
     jassert(lowMidCrossover != nullptr && midHighCrossover != nullptr);
-    // Если добавили OutGain:
-    // prmOutputGain = dynamic_cast<std::atomic<float>*>(apvts->getRawParameterValue("OutGain"));
-    // jassert(prmOutputGain != nullptr);
-    // apvts->addParameterListener("OutGain", this);
+
 }
 
 MBRPAudioProcessor::~MBRPAudioProcessor()
 {
-    // Если добавили OutGain:
-    // if (prmOutputGain != nullptr) // Проверка на случай, если параметр не был найден
-    //    apvts->removeParameterListener("OutGain", this);
+    //----//
 }
 
 
@@ -138,7 +118,7 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
-    spec.numChannels = 1; // Фильтры моно
+    spec.numChannels = 1; 
 
     leftLowMidLPF.prepare(spec); rightLowMidLPF.prepare(spec);
     leftMidHighLPF.prepare(spec); rightMidHighLPF.prepare(spec);
@@ -151,7 +131,6 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     midBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
     highBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
 
-    // Инициализируем FIFO через setCopyToFifo
     setCopyToFifo(copyToFifo.load());
 
     updateParameters();
@@ -208,23 +187,15 @@ void MBRPAudioProcessor::pushNextSampleToFifo(const juce::AudioBuffer<float>& bu
     int start1, block1, start2, block2;
     absFifo.prepareToWrite(numSamples, start1, block1, start2, block2);
 
-    // --- ВАЖНО: Логика копирования/суммирования ---
-    // Вариант 1: Суммирование каналов (как в witte/EqEditor)
     if (block1 > 0) fifo.copyFrom(0, start1 % fifoSize, buffer.getReadPointer(startChannel), block1);
     if (block2 > 0) fifo.copyFrom(0, start2 % fifoSize, buffer.getReadPointer(startChannel, block1), block2);
     for (int channel = startChannel + 1; channel < startChannel + numChannels; ++channel) {
         if (block1 > 0) fifo.addFrom(0, start1 % fifoSize, buffer.getReadPointer(channel), block1);
         if (block2 > 0) fifo.addFrom(0, start2 % fifoSize, buffer.getReadPointer(channel, block1), block2);
     }
-    // Если суммировали, возможно, нужно нормализовать делением на numChannels? Зависит от анализатора.
-
-    // Вариант 2: Копирование только одного канала (например, левого)
-    // if (block1 > 0) fifo.copyFrom(0, start1 % fifoSize, buffer.getReadPointer(0), block1); // Копируем только канал 0
-    // if (block2 > 0) fifo.copyFrom(0, start2 % fifoSize, buffer.getReadPointer(0, block1), block2);
-    // --- Выберите один из вариантов ---
 
     absFifo.finishedWrite(block1 + block2);
-    nextFFTBlockReady.store(true); // Сообщаем анализатору, что есть данные
+    nextFFTBlockReady.store(true); 
 }
 
 void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -237,11 +208,10 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
     updateParameters();
 
-    // Копируем ВХОДНЫЕ данные в FIFO (используем вариант 1 - суммирование)
+
     if (copyToFifo.load())
         pushNextSampleToFifo(buffer, 0, totalNumInputChannels, abstractFifoInput, audioFifoInput);
 
-    // DSP обработка (разделение на полосы, панорамирование)
     if (totalNumInputChannels == 2 && totalNumOutputChannels == 2)
     {
         auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
@@ -307,7 +277,6 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         }
     }
 
-    // Копируем ВЫХОДНЫЕ данные в FIFO (используем вариант 1 - суммирование)
     if (copyToFifo.load())
         pushNextSampleToFifo(buffer, 0, totalNumOutputChannels, abstractFifoOutput, audioFifoOutput);
 }
@@ -343,7 +312,6 @@ void MBRPAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 
 void MBRPAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
 {
-    // Оставьте пустым, если не используете prmOutputGain или другую логику здесь
     juce::ignoreUnused(parameterID, newValue);
 }
 
@@ -352,10 +320,10 @@ void MBRPAudioProcessor::setCopyToFifo(bool _copyToFifo)
     if (_copyToFifo != copyToFifo.load()) {
         copyToFifo.store(_copyToFifo);
         if (_copyToFifo) {
-            const int fifoSizeSamples = fftSize * 2; // Пример размера
+            const int fifoSizeSamples = fftSize * 2;
             abstractFifoInput.setTotalSize(fifoSizeSamples);
             abstractFifoOutput.setTotalSize(fifoSizeSamples);
-            audioFifoInput.setSize(1, fifoSizeSamples); // 1 канал для суммированного/левого сигнала
+            audioFifoInput.setSize(1, fifoSizeSamples);
             audioFifoOutput.setSize(1, fifoSizeSamples);
             abstractFifoInput.reset();
             abstractFifoOutput.reset();

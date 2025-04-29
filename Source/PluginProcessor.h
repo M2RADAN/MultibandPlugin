@@ -93,9 +93,8 @@ private:
         juce::AbstractFifo& absFifo, juce::AudioBuffer<float>& fifo);
 
     float lastSampleRate = 44100.0f;
-    juce::Point<int> editorSize = { 900, 700 }; // Размер редактора по умолчанию
+    juce::Point<int> editorSize = { 900, 700 };
 
-    // --- Внутренние методы ---
     void updateParameters();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessor)

@@ -8,90 +8,91 @@ ControlBar::ControlBar() {
 void ControlBar::resized() {
     auto bounds = getLocalBounds();
     analyzerButton.setBounds(bounds.removeFromLeft(50).withTrimmedTop(4).withTrimmedLeft(4));
+    // TODO: Добавить функционал кнопке analyzerButton
 }
 // ---------------------------
 
 // --- AnalyzerOverlay Implementation ---
-namespace MBRP_GUI
-{
-    AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover) :
-        lowMidXoverParam(lowXover), midHighXoverParam(midXover),
-        lastLowMidFreq(lowXover.get() + 1.f), lastMidHighFreq(midXover.get() + 1.f)
-    {
-        setInterceptsMouseClicks(false, false);
-        startTimerHz(30);
-    }
-
-    void AnalyzerOverlay::paint(juce::Graphics& g) {
-        drawCrossoverLines(g, getLocalBounds());
-    }
-
-    void AnalyzerOverlay::timerCallback() {
-        float currentLowMid = lowMidXoverParam.get();
-        float currentMidHigh = midHighXoverParam.get();
-        if (!juce::approximatelyEqual(currentLowMid, lastLowMidFreq) || !juce::approximatelyEqual(currentMidHigh, lastMidHighFreq)) {
-            lastLowMidFreq = currentLowMid;
-            lastMidHighFreq = currentMidHigh;
-            repaint();
-        }
-    }
-
-    void AnalyzerOverlay::resized() { repaint(); }
-
-    juce::Rectangle<int> AnalyzerOverlay::getAnalysisArea(juce::Rectangle<int> bounds) const {
-        bounds.reduce(1, 5); // Уменьшаем отступы как в SpectrumAnalyzer::drawGrid
-        return bounds;
-    }
-
-    template<typename FloatType>
-    static FloatType mapFreqToXLog(FloatType freq, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
-        freq = juce::jlimit(minF, maxF, freq);
-        if (maxF / minF <= 1.0f || freq <= 0) return left;
-        return left + width * (std::log(freq / minF) / std::log(maxF / minF));
-    }
-
-    void AnalyzerOverlay::drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds) {
-        using namespace juce;
-        auto analysisArea = getAnalysisArea(bounds).toFloat();
-        const float top = analysisArea.getY();
-        const float bottom = analysisArea.getBottom();
-        const float left = analysisArea.getX();
-        const float width = analysisArea.getWidth();
-        const float right = analysisArea.getRight();
-        const float minLogFreq = 20.0f;
-        const float maxLogFreq = 20000.0f; // Или processorRef.getSampleRate() / 2.0f;
-
-        float lowMidFreq = lowMidXoverParam.get();
-        float midHighFreq = midHighXoverParam.get();
-        float lowMidX = mapFreqToXLog(lowMidFreq, left, width, minLogFreq, maxLogFreq);
-        float midHighX = mapFreqToXLog(midHighFreq, left, width, minLogFreq, maxLogFreq);
-
-        g.setColour(Colours::orange.withAlpha(0.7f)); // Цвет для Low/Mid линии
-        if (lowMidX >= left && lowMidX <= right) g.drawVerticalLine(roundToInt(lowMidX), top, bottom);
-
-        g.setColour(Colours::cyan.withAlpha(0.7f)); // Цвет для Mid/High линии
-        if (midHighX >= left && midHighX <= right) g.drawVerticalLine(roundToInt(midHighX), top, bottom);
-
-        // Добавляем точки на линиях кроссовера
-        g.setColour(Colours::orange);
-        if (lowMidX >= left && lowMidX <= right) g.fillEllipse(lowMidX - 2.f, top, 4.f, 4.f);
-        g.setColour(Colours::cyan);
-        if (midHighX >= left && midHighX <= right) g.fillEllipse(midHighX - 2.f, top, 4.f, 4.f);
-    }
-} // End namespace MBRP_GUI
-// ---------------------------
+//namespace MBRP_GUI
+//{
+//    AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover) :
+//        lowMidXoverParam(lowXover), midHighXoverParam(midXover),
+//        lastLowMidFreq(lowXover.get() + 1.f), lastMidHighFreq(midXover.get() + 1.f)
+//    {
+//        setInterceptsMouseClicks(false, false);
+//        startTimerHz(30);
+//    }
+//
+//    void AnalyzerOverlay::paint(juce::Graphics& g) {
+//        drawCrossoverLines(g, getLocalBounds());
+//    }
+//
+//    void AnalyzerOverlay::timerCallback() {
+//        float currentLowMid = lowMidXoverParam.get();
+//        float currentMidHigh = midHighXoverParam.get();
+//        if (!juce::approximatelyEqual(currentLowMid, lastLowMidFreq) || !juce::approximatelyEqual(currentMidHigh, lastMidHighFreq)) {
+//            lastLowMidFreq = currentLowMid;
+//            lastMidHighFreq = currentMidHigh;
+//            repaint();
+//        }
+//    }
+//
+//    void AnalyzerOverlay::resized() { repaint(); }
+//
+//    juce::Rectangle<int> AnalyzerOverlay::getAnalysisArea(juce::Rectangle<int> bounds) const {
+//        bounds.reduce(1, 5);
+//        return bounds;
+//    }
+//
+//    template<typename FloatType>
+//    static FloatType mapFreqToXLog(FloatType freq, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
+//        freq = juce::jlimit(minF, maxF, freq);
+//        if (maxF / minF <= 1.0f || freq <= 0) return left;
+//        return left + width * (std::log(freq / minF) / std::log(maxF / minF));
+//    }
+//
+//    void AnalyzerOverlay::drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds) {
+//        using namespace juce;
+//        auto analysisArea = getAnalysisArea(bounds).toFloat();
+//        const float top = analysisArea.getY();
+//        const float bottom = analysisArea.getBottom();
+//        const float left = analysisArea.getX();
+//        const float width = analysisArea.getWidth();
+//        const float right = analysisArea.getRight();
+//        const float minLogFreq = 20.0f;
+//        const float maxLogFreq = 20000.0f;
+//
+//        float lowMidFreq = lowMidXoverParam.get();
+//        float midHighFreq = midHighXoverParam.get();
+//        float lowMidX = mapFreqToXLog(lowMidFreq, left, width, minLogFreq, maxLogFreq);
+//        float midHighX = mapFreqToXLog(midHighFreq, left, width, minLogFreq, maxLogFreq);
+//
+//        g.setColour(Colours::orange.withAlpha(0.7f));
+//        if (lowMidX >= left && lowMidX <= right) g.drawVerticalLine(roundToInt(lowMidX), top, bottom);
+//
+//        g.setColour(Colours::cyan.withAlpha(0.7f)); 
+//        if (midHighX >= left && midHighX <= right) g.drawVerticalLine(roundToInt(midHighX), top, bottom);
+//
+//       
+//        g.setColour(Colours::orange);
+//        if (lowMidX >= left && lowMidX <= right) g.fillEllipse(lowMidX - 2.f, top, 4.f, 4.f);
+//        g.setColour(Colours::cyan);
+//        if (midHighX >= left && midHighX <= right) g.fillEllipse(midHighX - 2.f, top, 4.f, 4.f);
+//    }
+//} // End namespace MBRP_GUI
+//// ---------------------------
 
 //==============================================================================
 MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p),
-    analyzer(p), // Инициализация нового анализатора
+    analyzer(p), 
     analyzerOverlay(*p.lowMidCrossover, *p.midHighCrossover),
     panSlider(nullptr, "", "Pan"),
     lowMidCrossoverAttachment(processorRef.getAPVTS(), "lowMidCrossover", lowMidCrossoverSlider),
     midHighCrossoverAttachment(processorRef.getAPVTS(), "midHighCrossover", midHighCrossoverSlider)
 {
     setLookAndFeel(&lnf);
-    processorRef.setCopyToFifo(true); // Включаем FIFO для анализатора
+    processorRef.setCopyToFifo(true); 
 
     addAndMakeVisible(controlBar);
     addAndMakeVisible(analyzer);
@@ -128,14 +129,15 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     addAndMakeVisible(panLabel);
 
     bandSelectControls.onBandSelected = [this](int bandIndex) { updatePanAttachment(bandIndex); };
+    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); }; // <-- Установлен колбэк
     updatePanAttachment(0);
 
-    setSize(900, 700); // Новый размер
-    startTimerHz(30); // Уменьшаем частоту таймера редактора
+    setSize(900, 700);
+    startTimerHz(30); 
 }
 
 MBRPAudioProcessorEditor::~MBRPAudioProcessorEditor() {
-    processorRef.setCopyToFifo(false); // Выключаем FIFO
+    processorRef.setCopyToFifo(false); 
     setLookAndFeel(nullptr);
 }
 
@@ -147,7 +149,7 @@ void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     int padding = 10;
     controlBar.setBounds(bounds.removeFromTop(32));
-    int analyzerHeight = 350; // Новая высота
+    int analyzerHeight = 350;
     auto analyzerArea = bounds.removeFromTop(analyzerHeight);
     analyzer.setBounds(analyzerArea);
     analyzerOverlay.setBounds(analyzerArea);
@@ -167,7 +169,7 @@ void MBRPAudioProcessorEditor::resized() {
 }
 
 void MBRPAudioProcessorEditor::timerCallback() {
-    // Оставляем пустым, т.к. компоненты имеют свои таймеры
+   
 }
 
 void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) {
@@ -193,4 +195,32 @@ void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) {
     panSlider.setColour(juce::Slider::thumbColourId, color);
     panSlider.setColour(juce::Slider::rotarySliderFillColourId, color.withAlpha(0.7f));
     panSlider.repaint();
+}
+
+void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex)
+{
+    DBG("Editor received band click from overlay: " << bandIndex);
+
+    juce::ToggleButton* buttonToSelect = nullptr;
+    switch (bandIndex) {
+    case 0: buttonToSelect = &bandSelectControls.lowBandButton; break;
+    case 1: buttonToSelect = &bandSelectControls.midBandButton; break;
+    case 2: buttonToSelect = &bandSelectControls.highBandButton; break;
+    default:
+        jassertfalse; // Недопустимый индекс
+        return;
+    }
+
+    // Проверяем, не выбрана ли уже эта кнопка
+    if (buttonToSelect && !buttonToSelect->getToggleState())
+    {
+        // Вызываем setToggleState с уведомлением.
+        // Это должно запустить onClick в BandSelectControls, который вызовет onBandSelected,
+        // который, в свою очередь, вызовет updatePanAttachment.
+        // sendNotificationSync гарантирует, что это произойдет немедленно в потоке сообщений.
+        buttonToSelect->setToggleState(true, juce::sendNotificationSync);
+
+        // Напрямую вызывать updatePanAttachment здесь не нужно,
+        // так как это сделает колбэк onBandSelected из bandSelectControls.
+    }
 }
