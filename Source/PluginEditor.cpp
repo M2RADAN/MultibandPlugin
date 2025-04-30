@@ -3,13 +3,27 @@
 
 // --- ControlBar Implementation ---
 ControlBar::ControlBar() {
+    analyzerButton.setClickingTogglesState(true); // РљРЅРѕРїРєР° СЂР°Р±РѕС‚Р°РµС‚ РєР°Рє РїРµСЂРµРєР»СЋС‡Р°С‚РµР»СЊ
+    analyzerButton.setTooltip("Enable/Disable Spectrum Analyzer");
+    // РџРѕРґРєР»СЋС‡Р°РµРј РІРЅСѓС‚СЂРµРЅРЅРёР№ РѕР±СЂР°Р±РѕС‚С‡РёРє
+    analyzerButton.onClick = [this] { analyzerButtonToggled(); };
     addAndMakeVisible(analyzerButton);
 }
 void ControlBar::resized() {
     auto bounds = getLocalBounds();
-    analyzerButton.setBounds(bounds.removeFromLeft(50).withTrimmedTop(4).withTrimmedLeft(4));
-    // TODO: Добавить функционал кнопке analyzerButton
+    // Р Р°Р·РјРµС‰Р°РµРј РєРЅРѕРїРєСѓ, РЅР°РїСЂРёРјРµСЂ, СЃРїСЂР°РІР°
+    analyzerButton.setBounds(bounds.removeFromRight(30).reduced(2));
+    // TODO: Г„Г®ГЎГ ГўГЁГІГј ГґГіГ­ГЄГ¶ГЁГ®Г­Г Г« ГЄГ­Г®ГЇГЄГҐ analyzerButton
 }
+
+void ControlBar::analyzerButtonToggled()
+{
+    // Р•СЃР»Рё РєРѕР»Р±СЌРє СѓСЃС‚Р°РЅРѕРІР»РµРЅ, РІС‹Р·С‹РІР°РµРј РµРіРѕ СЃ С‚РµРєСѓС‰РёРј СЃРѕСЃС‚РѕСЏРЅРёРµРј РєРЅРѕРїРєРё
+    if (onAnalyzerToggle) {
+        onAnalyzerToggle(analyzerButton.getToggleState());
+    }
+}
+
 
 //==============================================================================
 MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
@@ -28,17 +42,24 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     addAndMakeVisible(analyzerOverlay);
     addAndMakeVisible(bandSelectControls);
 
+    controlBar.onAnalyzerToggle = [this](bool state) { handleAnalyzerToggle(state); };
+    bool initialAnalyzerState = processorRef.isCopyToFifoEnabled(); // РџСЂРѕРІРµСЂСЏРµРј РЅР°С‡Р°Р»СЊРЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ РїСЂРѕС†РµСЃСЃРѕСЂР°
+    controlBar.analyzerButton.setToggleState(initialAnalyzerState, juce::dontSendNotification);
+    handleAnalyzerToggle(initialAnalyzerState); // РџСЂРёРјРµРЅСЏРµРј РЅР°С‡Р°Р»СЊРЅРѕРµ СЃРѕСЃС‚РѕСЏРЅРёРµ
+
+
+
     auto setupStandardSlider = [&](juce::Slider& slider, juce::Label& label, const juce::String& labelText) {
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
         slider.setTextBoxStyle(juce::Slider::TextBoxBelow, true, 80, 20);
         slider.setPopupDisplayEnabled(true, false, this);
         slider.setColour(juce::Slider::thumbColourId, ColorScheme::getSliderThumbColor());
         slider.setColour(juce::Slider::trackColourId, ColorScheme::getSliderTrackColor());
-        // --- Устанавливаем цвет текста в TextBox ---
-        slider.setColour(juce::Slider::textBoxTextColourId, ColorScheme::getSecondaryTextColor()); // Используем менее яркий серый цвет
-        // Устанавливаем цвет рамки TextBox (можно сделать чуть темнее фона)
+        // --- Г“Г±ГІГ Г­Г ГўГ«ГЁГўГ ГҐГ¬ Г¶ГўГҐГІ ГІГҐГЄГ±ГІГ  Гў TextBox ---
+        slider.setColour(juce::Slider::textBoxTextColourId, ColorScheme::getSecondaryTextColor()); // Г€Г±ГЇГ®Г«ГјГ§ГіГҐГ¬ Г¬ГҐГ­ГҐГҐ ГїГ°ГЄГЁГ© Г±ГҐГ°Г»Г© Г¶ГўГҐГІ
+        // Г“Г±ГІГ Г­Г ГўГ«ГЁГўГ ГҐГ¬ Г¶ГўГҐГІ Г°Г Г¬ГЄГЁ TextBox (Г¬Г®Г¦Г­Г® Г±Г¤ГҐГ«Г ГІГј Г·ГіГІГј ГІГҐГ¬Г­ГҐГҐ ГґГ®Г­Г )
         slider.setColour(juce::Slider::textBoxOutlineColourId, ColorScheme::getSliderTrackColor().darker(0.2f));
-        // Цвет фона TextBox можно оставить по умолчанию или установить явно
+        // Г–ГўГҐГІ ГґГ®Г­Г  TextBox Г¬Г®Г¦Г­Г® Г®Г±ГІГ ГўГЁГІГј ГЇГ® ГіГ¬Г®Г«Г·Г Г­ГЁГѕ ГЁГ«ГЁ ГіГ±ГІГ Г­Г®ГўГЁГІГј ГїГўГ­Г®
         // slider.setColour(juce::Slider::textBoxBackgroundColourId, ColorScheme::getBackgroundColor().darker(0.05f));
 
         slider.setName(labelText);
@@ -53,21 +74,21 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     setupStandardSlider(lowMidCrossoverSlider, lowMidCrossoverLabel, "Low / Mid");
     setupStandardSlider(midHighCrossoverSlider, midHighCrossoverLabel, "Mid / High");
     panSlider.setPopupDisplayEnabled(true, false, this);
-    // Устанавливаем цвета роторного слайдера через LookAndFeel ID
+    // Г“Г±ГІГ Г­Г ГўГ«ГЁГўГ ГҐГ¬ Г¶ГўГҐГІГ  Г°Г®ГІГ®Г°Г­Г®ГЈГ® Г±Г«Г Г©Г¤ГҐГ°Г  Г·ГҐГ°ГҐГ§ LookAndFeel ID
     panSlider.setColour(juce::Slider::rotarySliderFillColourId, ColorScheme::getSliderFillColor());
     panSlider.setColour(juce::Slider::rotarySliderOutlineColourId, ColorScheme::getSliderBorderColor());
-    panSlider.setColour(juce::Slider::thumbColourId, ColorScheme::getSliderThumbColor()); // Цвет указателя
+    panSlider.setColour(juce::Slider::thumbColourId, ColorScheme::getSliderThumbColor()); // Г–ГўГҐГІ ГіГЄГ Г§Г ГІГҐГ«Гї
     addAndMakeVisible(panSlider);
 
-    panLabel.setText("Pan", juce::dontSendNotification); // Устанавливаем текст "Pan"
+    panLabel.setText("Pan", juce::dontSendNotification); // Г“Г±ГІГ Г­Г ГўГ«ГЁГўГ ГҐГ¬ ГІГҐГЄГ±ГІ "Pan"
     panLabel.setJustificationType(juce::Justification::centred);
-    // panLabel.attachToComponent(&panSlider, false); // Не прикрепляем, разместим вручную
-    panLabel.setFont(juce::Font(14.0f, juce::Font::bold)); // Делаем метку "Pan" заметнее
-    panLabel.setColour(juce::Label::textColourId, ColorScheme::getDarkTextColor()); // Используем более темный цвет
+    // panLabel.attachToComponent(&panSlider, false); // ГЌГҐ ГЇГ°ГЁГЄГ°ГҐГЇГ«ГїГҐГ¬, Г°Г Г§Г¬ГҐГ±ГІГЁГ¬ ГўГ°ГіГ·Г­ГіГѕ
+    panLabel.setFont(juce::Font(14.0f, juce::Font::bold)); // Г„ГҐГ«Г ГҐГ¬ Г¬ГҐГІГЄГі "Pan" Г§Г Г¬ГҐГІГ­ГҐГҐ
+    panLabel.setColour(juce::Label::textColourId, ColorScheme::getDarkTextColor()); // Г€Г±ГЇГ®Г«ГјГ§ГіГҐГ¬ ГЎГ®Г«ГҐГҐ ГІГҐГ¬Г­Г»Г© Г¶ГўГҐГІ
     addAndMakeVisible(panLabel);
 
     bandSelectControls.onBandSelected = [this](int bandIndex) { updatePanAttachment(bandIndex); };
-    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); }; // <-- Установлен колбэк
+    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); }; // <-- Г“Г±ГІГ Г­Г®ГўГ«ГҐГ­ ГЄГ®Г«ГЎГЅГЄ
     updatePanAttachment(0);
 
     setSize(900, 700);
@@ -86,19 +107,19 @@ void MBRPAudioProcessorEditor::paint(juce::Graphics& g) {
 void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     int padding = 10;
-    int controlBarHeight = 32; // Убрал, если ControlBar не используется активно
-    // controlBar.setBounds(bounds.removeFromTop(controlBarHeight));
+    int controlBarHeight = 32; // Г“ГЎГ°Г Г«, ГҐГ±Г«ГЁ ControlBar Г­ГҐ ГЁГ±ГЇГ®Г«ГјГ§ГіГҐГІГ±Гї Г ГЄГІГЁГўГ­Г®
+    controlBar.setBounds(bounds.removeFromTop(controlBarHeight).reduced(padding, 0));
 
-    int analyzerHeight = 300; // Немного уменьшим анализатор
-    auto analyzerArea = bounds.removeFromTop(analyzerHeight).reduced(padding, 0); // Добавим отступы по бокам
+    int analyzerHeight = 300; // ГЌГҐГ¬Г­Г®ГЈГ® ГіГ¬ГҐГ­ГјГёГЁГ¬ Г Г­Г Г«ГЁГ§Г ГІГ®Г°
+    auto analyzerArea = bounds.removeFromTop(analyzerHeight).reduced(padding, 0); // Г„Г®ГЎГ ГўГЁГ¬ Г®ГІГ±ГІГіГЇГ» ГЇГ® ГЎГ®ГЄГ Г¬
     analyzer.setBounds(analyzerArea);
     analyzerOverlay.setBounds(analyzerArea);
 
-    // Область под анализатором
+    // ГЋГЎГ«Г Г±ГІГј ГЇГ®Г¤ Г Г­Г Г«ГЁГ§Г ГІГ®Г°Г®Г¬
     auto controlsArea = bounds.reduced(padding);
-    controlsArea.removeFromTop(padding); // Отступ сверху
+    controlsArea.removeFromTop(padding); // ГЋГІГ±ГІГіГЇ Г±ГўГҐГ°ГµГі
 
-    // Слайдеры кроссоверов
+    // Г‘Г«Г Г©Г¤ГҐГ°Г» ГЄГ°Г®Г±Г±Г®ГўГҐГ°Г®Гў
     int labelHeight = 15;
     int sliderHeight = 40;
     int crossoverControlHeight = labelHeight + sliderHeight;
@@ -109,27 +130,37 @@ void MBRPAudioProcessorEditor::resized() {
     lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
     lowMidCrossoverSlider.setBounds(lowMidArea);
 
-    crossoverArea.removeFromLeft(padding); // Отступ между слайдерами
+    crossoverArea.removeFromLeft(padding); // ГЋГІГ±ГІГіГЇ Г¬ГҐГ¦Г¤Гі Г±Г«Г Г©Г¤ГҐГ°Г Г¬ГЁ
 
     auto midHighArea = crossoverArea;
     midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
     midHighCrossoverSlider.setBounds(midHighArea);
 
-    controlsArea.removeFromTop(padding); // Отступ
+    controlsArea.removeFromTop(padding); // ГЋГІГ±ГІГіГЇ
 
-    // Кнопки выбора полосы
+    // ГЉГ­Г®ГЇГЄГЁ ГўГ»ГЎГ®Г°Г  ГЇГ®Г«Г®Г±Г»
     int bandSelectHeight = 30;
-    bandSelectControls.setBounds(controlsArea.removeFromTop(bandSelectHeight).reduced(crossoverWidth / 2, 0)); // Центрируем кнопки
+    bandSelectControls.setBounds(controlsArea.removeFromTop(bandSelectHeight).reduced(crossoverWidth / 2, 0)); // Г–ГҐГ­ГІГ°ГЁГ°ГіГҐГ¬ ГЄГ­Г®ГЇГЄГЁ
 
-    controlsArea.removeFromTop(padding * 2); // Больший отступ перед Pan
+    controlsArea.removeFromTop(padding * 2); // ГЃГ®Г«ГјГёГЁГ© Г®ГІГ±ГІГіГЇ ГЇГҐГ°ГҐГ¤ Pan
 
-    // Область Pan
+    // ГЋГЎГ«Г Г±ГІГј Pan
     auto panArea = controlsArea;
-    int panLabelHeight = 20; // Высота для метки "Pan"
-    // Размещаем метку "Pan" ВНИЗУ области panArea
+    int panLabelHeight = 20; // Г‚Г»Г±Г®ГІГ  Г¤Г«Гї Г¬ГҐГІГЄГЁ "Pan"
+    // ГђГ Г§Г¬ГҐГ№Г ГҐГ¬ Г¬ГҐГІГЄГі "Pan" Г‚ГЌГ€Г‡Г“ Г®ГЎГ«Г Г±ГІГЁ panArea
     panLabel.setBounds(panArea.removeFromBottom(panLabelHeight));
-    // Оставшаяся область для слайдера, центрируем его
-    panSlider.setBounds(panArea.reduced(panArea.getWidth() / 3, padding)); // Делаем слайдер покрупнее и центрируем
+    // ГЋГ±ГІГ ГўГёГ ГїГ±Гї Г®ГЎГ«Г Г±ГІГј Г¤Г«Гї Г±Г«Г Г©Г¤ГҐГ°Г , Г¶ГҐГ­ГІГ°ГЁГ°ГіГҐГ¬ ГҐГЈГ®
+    panSlider.setBounds(panArea.reduced(panArea.getWidth() / 3, padding)); // Г„ГҐГ«Г ГҐГ¬ Г±Г«Г Г©Г¤ГҐГ° ГЇГ®ГЄГ°ГіГЇГ­ГҐГҐ ГЁ Г¶ГҐГ­ГІГ°ГЁГ°ГіГҐГ¬
+
+
+
+}
+
+void MBRPAudioProcessorEditor::handleAnalyzerToggle(bool shouldBeOn)
+{
+    processorRef.setCopyToFifo(shouldBeOn); // РЈРїСЂР°РІР»СЏРµРј РєРѕРїРёСЂРѕРІР°РЅРёРµРј РґР°РЅРЅС‹С… РІ FIFO
+    analyzer.setAnalyzerActive(shouldBeOn); // Р’РєР»СЋС‡Р°РµРј/РІС‹РєР»СЋС‡Р°РµРј РѕС‚СЂРёСЃРѕРІРєСѓ РІ Р°РЅР°Р»РёР·Р°С‚РѕСЂРµ
+    DBG("Analyzer Toggled: " << (shouldBeOn ? "ON" : "OFF"));
 }
 
 void MBRPAudioProcessorEditor::timerCallback() {
@@ -138,8 +169,8 @@ void MBRPAudioProcessorEditor::timerCallback() {
 
 void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) {
     juce::String paramId;
-    // juce::String labelText; // Больше не нужен специфичный текст метки
-    juce::Colour bandColour; // Цвет для слайдера
+    // juce::String labelText; // ГЃГ®Г«ГјГёГҐ Г­ГҐ Г­ГіГ¦ГҐГ­ Г±ГЇГҐГ¶ГЁГґГЁГ·Г­Г»Г© ГІГҐГЄГ±ГІ Г¬ГҐГІГЄГЁ
+    juce::Colour bandColour; // Г–ГўГҐГІ Г¤Г«Гї Г±Г«Г Г©Г¤ГҐГ°Г 
 
     switch (bandIndex) {
     case 0:
@@ -161,21 +192,21 @@ void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) {
     auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(targetParam);
     jassert(rangedParam != nullptr); if (!rangedParam) return;
 
-    panSlider.changeParam(rangedParam); // Обновляем параметр слайдера
+    panSlider.changeParam(rangedParam); // ГЋГЎГ­Г®ГўГ«ГїГҐГ¬ ГЇГ Г°Г Г¬ГҐГІГ° Г±Г«Г Г©Г¤ГҐГ°Г 
 
-    // --- Убираем настройку текстового поля и внутренних меток ---
-    panSlider.labels.clear(); // Очищаем старые (на всякий случай)
-    panSlider.labels.add({ 0.0f, "L" }); // 0.0 соответствует значению -1.0 панорамы
-    panSlider.labels.add({ 0.5f, "C" }); // 0.5 соответствует значению 0.0 панорамы
-    panSlider.labels.add({ 1.0f, "R" }); // 1.0 соответствует значению +1.0 панорамы
+    // --- Г“ГЎГЁГ°Г ГҐГ¬ Г­Г Г±ГІГ°Г®Г©ГЄГі ГІГҐГЄГ±ГІГ®ГўГ®ГЈГ® ГЇГ®Г«Гї ГЁ ГўГ­ГіГІГ°ГҐГ­Г­ГЁГµ Г¬ГҐГІГ®ГЄ ---
+    panSlider.labels.clear(); // ГЋГ·ГЁГ№Г ГҐГ¬ Г±ГІГ Г°Г»ГҐ (Г­Г  ГўГ±ГїГЄГЁГ© Г±Г«ГіГ·Г Г©)
+    panSlider.labels.add({ 0.0f, "L" }); // 0.0 Г±Г®Г®ГІГўГҐГІГ±ГІГўГіГҐГІ Г§Г­Г Г·ГҐГ­ГЁГѕ -1.0 ГЇГ Г­Г®Г°Г Г¬Г»
+    panSlider.labels.add({ 0.5f, "C" }); // 0.5 Г±Г®Г®ГІГўГҐГІГ±ГІГўГіГҐГІ Г§Г­Г Г·ГҐГ­ГЁГѕ 0.0 ГЇГ Г­Г®Г°Г Г¬Г»
+    panSlider.labels.add({ 1.0f, "R" }); // 1.0 Г±Г®Г®ГІГўГҐГІГ±ГІГўГіГҐГІ Г§Г­Г Г·ГҐГ­ГЁГѕ +1.0 ГЇГ Г­Г®Г°Г Г¬Г»
     // -----------------------------------------
 
-    panSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); // Текстовое поле все еще не нужно
+    panSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); // Г’ГҐГЄГ±ГІГ®ГўГ®ГҐ ГЇГ®Г«ГҐ ГўГ±ГҐ ГҐГ№ГҐ Г­ГҐ Г­ГіГ¦Г­Г®
 
     panAttachment.reset();
     panAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), paramId, panSlider);
 
-    panLabel.setText("Pan", juce::dontSendNotification); // Внешняя метка остается "Pan"
+    panLabel.setText("Pan", juce::dontSendNotification); // Г‚Г­ГҐГёГ­ГїГї Г¬ГҐГІГЄГ  Г®Г±ГІГ ГҐГІГ±Гї "Pan"
 
     panSlider.setColour(juce::Slider::thumbColourId, bandColour);
     panSlider.setColour(juce::Slider::rotarySliderFillColourId, bandColour.withAlpha(0.7f));
@@ -193,20 +224,20 @@ void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex)
     case 1: buttonToSelect = &bandSelectControls.midBandButton; break;
     case 2: buttonToSelect = &bandSelectControls.highBandButton; break;
     default:
-        jassertfalse; // Недопустимый индекс
+        jassertfalse; // ГЌГҐГ¤Г®ГЇГіГ±ГІГЁГ¬Г»Г© ГЁГ­Г¤ГҐГЄГ±
         return;
     }
 
-    // Проверяем, не выбрана ли уже эта кнопка
+    // ГЏГ°Г®ГўГҐГ°ГїГҐГ¬, Г­ГҐ ГўГ»ГЎГ°Г Г­Г  Г«ГЁ ГіГ¦ГҐ ГЅГІГ  ГЄГ­Г®ГЇГЄГ 
     if (buttonToSelect && !buttonToSelect->getToggleState())
     {
-        // Вызываем setToggleState с уведомлением.
-        // Это должно запустить onClick в BandSelectControls, который вызовет onBandSelected,
-        // который, в свою очередь, вызовет updatePanAttachment.
-        // sendNotificationSync гарантирует, что это произойдет немедленно в потоке сообщений.
+        // Г‚Г»Г§Г»ГўГ ГҐГ¬ setToggleState Г± ГіГўГҐГ¤Г®Г¬Г«ГҐГ­ГЁГҐГ¬.
+        // ГќГІГ® Г¤Г®Г«Г¦Г­Г® Г§Г ГЇГіГ±ГІГЁГІГј onClick Гў BandSelectControls, ГЄГ®ГІГ®Г°Г»Г© ГўГ»Г§Г®ГўГҐГІ onBandSelected,
+        // ГЄГ®ГІГ®Г°Г»Г©, Гў Г±ГўГ®Гѕ Г®Г·ГҐГ°ГҐГ¤Гј, ГўГ»Г§Г®ГўГҐГІ updatePanAttachment.
+        // sendNotificationSync ГЈГ Г°Г Г­ГІГЁГ°ГіГҐГІ, Г·ГІГ® ГЅГІГ® ГЇГ°Г®ГЁГ§Г®Г©Г¤ГҐГІ Г­ГҐГ¬ГҐГ¤Г«ГҐГ­Г­Г® Гў ГЇГ®ГІГ®ГЄГҐ Г±Г®Г®ГЎГ№ГҐГ­ГЁГ©.
         buttonToSelect->setToggleState(true, juce::sendNotificationSync);
 
-        // Напрямую вызывать updatePanAttachment здесь не нужно,
-        // так как это сделает колбэк onBandSelected из bandSelectControls.
+        // ГЌГ ГЇГ°ГїГ¬ГіГѕ ГўГ»Г§Г»ГўГ ГІГј updatePanAttachment Г§Г¤ГҐГ±Гј Г­ГҐ Г­ГіГ¦Г­Г®,
+        // ГІГ ГЄ ГЄГ ГЄ ГЅГІГ® Г±Г¤ГҐГ«Г ГҐГІ ГЄГ®Г«ГЎГЅГЄ onBandSelected ГЁГ§ bandSelectControls.
     }
 }

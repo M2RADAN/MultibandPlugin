@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="VIqBol" name="MBRP" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="GoldNGrid">
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="GoldNGrid"
+              pluginVST3Category="Reverb,Spatial">
   <MAINGROUP id="UIw0zL" name="MBRP">
     <GROUP id="{240ADC6D-992C-2E44-53A0-FA4D2498D38F}" name="Source">
       <GROUP id="{A5234751-10F8-2D5A-BE0C-72AEF3C19321}" name="DSP">
@@ -55,6 +56,7 @@
     </GROUP>
   </MAINGROUP>
   <MODULES>
+    <MODULE id="juce_animation" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
@@ -91,6 +93,7 @@
         <MODULEPATH id="juce_graphics" path="../../../Desktop/juce/modules"/>
         <MODULEPATH id="juce_gui_basics" path="../../../Desktop/juce/modules"/>
         <MODULEPATH id="juce_gui_extra" path="../../../Desktop/juce/modules"/>
+        <MODULEPATH id="juce_animation" path="../../../Desktop/juce/modules"/>
       </MODULEPATHS>
     </VS2022>
   </EXPORTFORMATS>

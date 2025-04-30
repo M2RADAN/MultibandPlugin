@@ -17,9 +17,15 @@ struct ControlBar : juce::Component
 {
     ControlBar();
     void resized() override;
+    std::function<void(bool isAnalyzerOn)> onAnalyzerToggle;
     AnalyzerButton analyzerButton;
+private:
+    // Добавляем обработчик для кнопки внутри ControlBar
+    void analyzerButtonToggled();
 };
 
+    // Добавляем обработчик для кнопки внутри ControlBar
+    
 // AnalyzerOverlay
 //namespace MBRP_GUI
 //{
@@ -77,6 +83,6 @@ private:
     // Методы
     void updatePanAttachment(int bandIndex);
     void handleBandAreaClick(int bandIndex); // <-- Объявляем новый метод-обработчик
-
+    void handleAnalyzerToggle(bool shouldBeOn);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessorEditor)
 };

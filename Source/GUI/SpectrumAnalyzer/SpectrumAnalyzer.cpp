@@ -256,32 +256,71 @@ namespace MBRP_GUI
 
     //==============================================================================
 
+
+    void SpectrumAnalyzer::setAnalyzerActive(bool isActive)
+    {
+        if (isActive != analyzerIsActive.load())
+        {
+            analyzerIsActive.store(isActive);
+            if (!isActive) {
+                // Очистка буферов (оставляем опционально)
+                // displayData.assign(displayData.size(), mindB);
+                // peakHoldLevels.assign(peakHoldLevels.size(), mindB);
+            }
+            // setVisible(isActive); // <-- ЗАКОММЕНТИРОВАТЬ ИЛИ УДАЛИТЬ
+            repaint();
+        }
+    }
+
+
+
     void SpectrumAnalyzer::paint(juce::Graphics& g)
     {
         using namespace juce;
-        g.fillAll(ColorScheme::getAnalyzerBackgroundColor());
+        g.fillAll(ColorScheme::getAnalyzerBackgroundColor()); // Заливаем фон в любом случае
         auto bounds = getLocalBounds().toFloat();
-        auto graphBounds = bounds.reduced(1.f, 5.f);
+        auto graphBounds = bounds.reduced(1.f, 5.f); // Получаем область графика
 
-
+        // Пересчитываем точки, если нужно
         if (fftPointsSize == 0 && getWidth() > 0) {
             recalculateFftPoints();
         }
 
+        // Рисуем сетку и шкалу ВСЕГДА
         drawFrequencyGrid(g, graphBounds);
         drawGainScale(g, graphBounds);
-        drawSpectrumAndPeaks(g, graphBounds);
-        //drawFrequencyMarkers(g, graphBounds);
 
-        g.setColour(ColorScheme::getAnalyzerPeakTextColor());
-        auto peakFont = juce::Font(juce::FontOptions(12.0f)); g.setFont(peakFont);
-        float currentPeak = peakDbLevel.load();
-        String peakText = "Peak: " + ((currentPeak <= mindB + 0.01f) ? String("-inf dB") : String(currentPeak, 1) + " dB");
-        float peakTextAreaWidth = getTextLayoutWidth(peakText, peakFont) + 10.f; float peakTextAreaHeight = 15.f;
-        juce::Rectangle<float> peakTextArea(graphBounds.getRight() - peakTextAreaWidth, graphBounds.getY(), peakTextAreaWidth, peakTextAreaHeight);
-        g.drawText(peakText, peakTextArea.toNearestInt(), Justification::centredRight, false);
+        // --- Рисуем спектр и пики ТОЛЬКО если анализатор активен ---
+        if (analyzerIsActive.load()) // Проверяем флаг
+        {
+            drawSpectrumAndPeaks(g, graphBounds);
 
-        g.setColour(ColorScheme::getComponentOutlineColor());
+            // Рисуем текст пикового значения только если активен
+            g.setColour(ColorScheme::getAnalyzerPeakTextColor());
+            auto peakFont = juce::Font(juce::FontOptions(12.0f)); g.setFont(peakFont);
+            float currentPeak = peakDbLevel.load();
+            String peakText = "Peak: " + ((currentPeak <= mindB + 0.01f) ? String("-inf dB") : String(currentPeak, 1) + " dB");
+            float peakTextAreaWidth = getTextLayoutWidth(peakText, peakFont) + 10.f; float peakTextAreaHeight = 15.f;
+            juce::Rectangle<float> peakTextArea(graphBounds.getRight() - peakTextAreaWidth, graphBounds.getY(), peakTextAreaWidth, peakTextAreaHeight);
+            g.drawText(peakText, peakTextArea.toNearestInt(), Justification::centredRight, false);
+        }
+        else
+        {
+            // Если неактивен, можно нарисовать полупрозрачную заглушку поверх сетки
+            // или просто оставить сетку видимой без спектра.
+            // Пример с заглушкой:
+            // g.setColour(ColorScheme::getAnalyzerBackgroundColor().withAlpha(0.7f)); // Полупрозрачный цвет фона
+            // g.fillRect(graphBounds); // Заливаем только область графика
+            // g.setColour(ColorScheme::getScaleTextColor().withAlpha(0.5f));
+            // g.setFont(15.0f);
+            // g.drawFittedText("Analyzer Disabled", graphBounds.toNearestInt(), juce::Justification::centred, 1);
+
+            // Или просто ничего не рисуем поверх сетки, если хотим оставить ее чистой.
+        }
+        // -----------------------------------------------------------
+
+        // Рисуем рамку компонента всегда
+        g.setColour(juce::Colours::lightgrey); // Или ColorScheme::getComponentOutlineColor()
         g.drawRect(getLocalBounds(), 1.f);
     }
 

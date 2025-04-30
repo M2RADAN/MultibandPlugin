@@ -69,7 +69,7 @@ public:
     juce::Point<int> getSavedEditorSize() const { return editorSize; }
     void setSavedEditorSize(const juce::Point<int>& size) { editorSize = size; }
     // ---------------------------------------------
-
+    bool isCopyToFifoEnabled() const { return copyToFifo.load(); }
 private:
     std::unique_ptr<juce::AudioProcessorValueTreeState> apvts;
 

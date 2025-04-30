@@ -19,9 +19,13 @@ namespace MBRP_GUI
         void resized() override;
         void timerCallback() override;
 
+        void setAnalyzerActive(bool isActive);
+        bool isAnalyzerActive() const { return isVisible() && this->analyzerIsActive; } // Проверяем и видимость
+
+
     private:
         MBRPAudioProcessor& processor;
-
+        std::atomic<bool> analyzerIsActive{ true };
 
         std::vector<float> displayData;    
         std::vector<float> peakHoldLevels;   
