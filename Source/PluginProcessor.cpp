@@ -1,14 +1,83 @@
-#include "PluginProcessor.h" // Включает MBRPAudioProcessor из PluginProcessor.h
-#include "PluginEditor.h"    // Включает MBRPAudioProcessorEditor из PluginEditor.h
-#include <cmath>          // Для M_PI, cos, sin, std::max
-#include <vector>         // Для возможного использования std::vector
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+#include <cmath>
+#include <vector>
+#include <memory>
 
-// Определяем M_PI, если не определен (для MSVC)
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-//==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createParameterLayout()
+{
+    APVTS::ParameterLayout layout;
+    using namespace juce;
+
+    const ParameterID lowMidCrossoverParamID{ "lowMidCrossover", 1 };
+    const ParameterID midHighCrossoverParamID{ "midHighCrossover", 1 };
+    const ParameterID lowPanParamID{ "lowPan", 1 };
+    const ParameterID midPanParamID{ "midPan", 1 };
+    const ParameterID highPanParamID{ "highPan", 1 };
+    const ParameterID bypassParamID{ "bypass", 1 }; // ID РґР»СЏ Р±Р°Р№РїР°СЃР°
+
+
+    auto lowMidRange = NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.25f);
+    auto midHighRange = NormalisableRange<float>(500.0f, 20000.0f, 1.0f, 0.25f);
+    auto panRange = NormalisableRange<float>(-1.0f, 1.0f, 0.01f);
+    auto bypassStrings = StringArray{ "Off", "On" }; // РР»Рё "Active", "Bypassed"
+
+    auto freqValueToText = [](float v, int ) { return juce::String(v, 0) + " Hz"; };
+    auto kHzValueToText = [](float v, int ) {
+        return (v < 1000.f) ? juce::String(v, 0) + " Hz"
+            : juce::String(v / 1000.f, 1) + " kHz";
+        };
+    auto panValueToText = [](float v, int ) {
+        if (std::abs(v) < 0.01f) return String("C");
+        float percentage = std::abs(v) * 100.0f;
+        if (v < 0.0f) return String("L") + String(percentage, 0);
+        return String("R") + String(percentage, 0);
+        };
+    auto panTextToValue = [](const String& text) {
+        if (text.compareIgnoreCase("C") == 0 || text.isEmpty()) return 0.0f;
+        if (text.startsWithIgnoreCase("L")) return juce::jlimit(-1.0f, 0.0f, -text.substring(1).getFloatValue() / 100.0f);
+        if (text.startsWithIgnoreCase("R")) return juce::jlimit(0.0f, 1.0f, text.substring(1).getFloatValue() / 100.0f);
+        float val = text.getFloatValue(); 
+        return juce::jlimit(-1.0f, 1.0f, val);
+        };
+
+
+    layout.add(std::make_unique<AudioParameterFloat>(
+        lowMidCrossoverParamID, "Low-Mid Freq", lowMidRange, 500.0f,
+        "Hz", AudioProcessorParameter::genericParameter, freqValueToText, nullptr
+    ));
+    layout.add(std::make_unique<AudioParameterFloat>(
+        midHighCrossoverParamID, "Mid-High Freq", midHighRange, 2000.0f,
+        "Hz/kHz", AudioProcessorParameter::genericParameter, kHzValueToText, nullptr
+    ));
+    layout.add(std::make_unique<AudioParameterFloat>(
+        lowPanParamID, "Low Pan", panRange, 0.0f,
+        "%L/R", AudioProcessorParameter::genericParameter, panValueToText, panTextToValue
+    ));
+    layout.add(std::make_unique<AudioParameterFloat>(
+        midPanParamID, "Mid Pan", panRange, 0.0f,
+        "%L/R", AudioProcessorParameter::genericParameter, panValueToText, panTextToValue
+    ));
+    layout.add(std::make_unique<AudioParameterFloat>(
+        highPanParamID, "High Pan", panRange, 0.0f,
+        "%L/R", AudioProcessorParameter::genericParameter, panValueToText, panTextToValue
+    ));
+
+    layout.add(std::make_unique<AudioParameterBool>(
+        bypassParamID,          // ID
+        "Bypass",               // РРјСЏ РїР°СЂР°РјРµС‚СЂР°
+        false,                  // Р—РЅР°С‡РµРЅРёРµ РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ
+        juce::AudioParameterBoolAttributes().withLabel("Bypass").withStringFromValueFunction([bypassStrings](bool v, int) { return bypassStrings[v ? 1 : 0]; }) // РСЃРїРѕР»СЊР·СѓРµРј Р°С‚СЂРёР±СѓС‚С‹ РґР»СЏ label Рё strings
+        .withValueFromStringFunction([bypassStrings](const String& text) { return bypassStrings.indexOf(text) == 1; }) // Р”РѕР±Р°РІР»СЏРµРј РѕР±СЂР°С‚РЅРѕРµ РїСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёРµ
+    ));
+
+    return layout;
+}
+
 MBRPAudioProcessor::MBRPAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
     : AudioProcessor(BusesProperties()
@@ -18,70 +87,42 @@ MBRPAudioProcessor::MBRPAudioProcessor()
 #endif
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-    )
+    ) 
+#else 
+    : AudioProcessor()
+
 #endif
-{
-    apvts = new juce::AudioProcessorValueTreeState(*this, nullptr, "Parameters",
-        {
-            // Параметр частоты среза НЧ/СЧ кроссовера
-            std::make_unique<juce::AudioParameterFloat>("lowMidCrossover",            // parameterID
-                                                        "Low-Mid Freq",               // parameter name
-                                                        juce::NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.25f), // range (log)
-                                                        500.0f,                       // default value
-                                                        juce::String(),               // parameter label (unit suffix)
-                                                        juce::AudioProcessorParameter::genericParameter, // category
-                                                        [](float v, int) { return juce::String(v, 0) + " Hz"; }, // value to text lambda
-                                                        nullptr),                     // text to value lambda
 
-                                                        // Параметр частоты среза СЧ/ВЧ кроссовера
-                                                        std::make_unique<juce::AudioParameterFloat>("midHighCrossover",           // parameterID
-                                                                                                    "Mid-High Freq",              // parameter name
-                                                                                                    juce::NormalisableRange<float>(500.0f, 20000.0f, 1.0f, 0.25f), // range (log)
-                                                                                                    2000.0f,                      // default value
-                                                                                                    juce::String(),               // parameter label (unit suffix)
-                                                                                                    juce::AudioProcessorParameter::genericParameter, // category
-                                                                                                    [](float v, int) { return (v < 1000.f) ? juce::String(v, 0) + " Hz" : juce::String(v / 1000.f, 1) + " kHz"; }, // value to text lambda
-                                                                                                    nullptr),                     // text to value lambda
+{ 
 
-                                                                                                    // Параметр панорамы НЧ полосы
-                                                                                                    std::make_unique<juce::AudioParameterFloat>("lowPan",                     // parameterID
-                                                                                                                                                "Low Pan",                    // parameter name
-                                                                                                                                                -1.0f,                        // min value (Left)
-                                                                                                                                                1.0f,                         // max value (Right)
-                                                                                                                                                0.0f),                        // default value (Center)
+    apvts.reset(new juce::AudioProcessorValueTreeState(*this, nullptr, "Parameters", createParameterLayout()));
 
-                                                                                                                                                // Параметр панорамы СЧ полосы
-                                                                                                                                                std::make_unique<juce::AudioParameterFloat>("midPan", "Mid Pan", -1.0f, 1.0f, 0.0f),
 
-                                                                                                                                                // Параметр панорамы ВЧ полосы
-                                                                                                                                                std::make_unique<juce::AudioParameterFloat>("highPan", "High Pan", -1.0f, 1.0f, 0.0f)
-        });
+    lowMidCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("lowMidCrossover"));
+    midHighCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("midHighCrossover"));
+    jassert(lowMidCrossover != nullptr && midHighCrossover != nullptr);
 
-    // Устанавливаем типы фильтров
-    leftLPF1.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
-    rightLPF1.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
-    leftHPF1.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
-    rightHPF1.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    bypassParameter = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("bypass"));
+    jassert(bypassParameter != nullptr); // РЈР±РµРґРёРјСЃСЏ, С‡С‚Рѕ РїР°СЂР°РјРµС‚СЂ РЅР°Р№РґРµРЅ
+    // -------------------------------------------------
 
-    leftLPF2.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
-    rightLPF2.setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
-    leftHPF2.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
-    rightHPF2.setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+    // Р”РѕР±Р°РІР»СЏРµРј Listener (РµСЃР»Рё РµС‰Рµ РЅРµ РґРѕР±Р°РІР»РµРЅ)
+    apvts->addParameterListener("bypass", this);
+    apvts->addParameterListener("lowMidCrossover", this); // Р”РѕР±Р°РІСЊС‚Рµ Р»РёСЃС‚РµРЅРµСЂС‹ Рё РґР»СЏ РґСЂСѓРіРёС… РїР°СЂР°РјРµС‚СЂРѕРІ, РµСЃР»Рё РЅСѓР¶РЅРѕ
+    apvts->addParameterListener("midHighCrossover", this);
+    apvts->addParameterListener("lowPan", this);
+    apvts->addParameterListener("midPan", this);
+    apvts->addParameterListener("highPan", this);
 
-    leftAPF2.setType(juce::dsp::LinkwitzRileyFilterType::allpass); // Важно! Тип Allpass
-    rightAPF2.setType(juce::dsp::LinkwitzRileyFilterType::allpass);
 }
 
 MBRPAudioProcessor::~MBRPAudioProcessor()
 {
+    //----//
 }
 
-//==============================================================================
-const juce::String MBRPAudioProcessor::getName() const
-{
-    return JucePlugin_Name; // Убедись, что имя в Projucer = "MBRP"
-}
 
+const juce::String MBRPAudioProcessor::getName() const { return JucePlugin_Name; }
 bool MBRPAudioProcessor::acceptsMidi() const { return false; }
 bool MBRPAudioProcessor::producesMidi() const { return false; }
 bool MBRPAudioProcessor::isMidiEffect() const { return false; }
@@ -92,53 +133,38 @@ void MBRPAudioProcessor::setCurrentProgram(int index) { juce::ignoreUnused(index
 const juce::String MBRPAudioProcessor::getProgramName(int index) { juce::ignoreUnused(index); return {}; }
 void MBRPAudioProcessor::changeProgramName(int index, const juce::String& newName) { juce::ignoreUnused(index, newName); }
 
-//==============================================================================
 void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    lastSampleRate = (float)sampleRate;
+    lastSampleRate = static_cast<float>(sampleRate);
 
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = samplesPerBlock;
-    spec.numChannels = 1; // Фильтры обрабатывают поканально
+    spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
+    spec.numChannels = 1; 
 
-    // Подготовка всех фильтров
-    leftLPF1.prepare(spec); rightLPF1.prepare(spec);
-    leftHPF1.prepare(spec); rightHPF1.prepare(spec);
-    leftLPF2.prepare(spec); rightLPF2.prepare(spec);
-    leftHPF2.prepare(spec); rightHPF2.prepare(spec);
-    leftAPF2.prepare(spec); rightAPF2.prepare(spec); // Подготовка All-Pass
+    leftLowMidLPF.prepare(spec); rightLowMidLPF.prepare(spec);
+    leftMidHighLPF.prepare(spec); rightMidHighLPF.prepare(spec);
+    leftLowMidLPF.reset(); rightLowMidLPF.reset();
+    leftMidHighLPF.reset(); rightMidHighLPF.reset();
 
-    // Сброс состояния фильтров
-    leftLPF1.reset(); rightLPF1.reset();
-    leftHPF1.reset(); rightHPF1.reset();
-    leftLPF2.reset(); rightLPF2.reset();
-    leftHPF2.reset(); rightHPF2.reset();
-    leftAPF2.reset(); rightAPF2.reset(); // Сброс All-Pass
-
-    // Выделение памяти для буферов
-    int numOutputChannels = getTotalNumOutputChannels(); // Обычно 2 для стерео
-    // Устанавливаем флаги очистки буферов при изменении размера
-    hpf1OutputBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
+    int numOutputChannels = getTotalNumOutputChannels();
+    intermediateBuffer1.setSize(numOutputChannels, samplesPerBlock, false, true, true);
     lowBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
     midBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
     highBandBuffer.setSize(numOutputChannels, samplesPerBlock, false, true, true);
 
-    updateParameters(); // Обновляем параметры при старте
+    setCopyToFifo(copyToFifo.load());
+
+    updateParameters();
 }
 
-void MBRPAudioProcessor::releaseResources()
-{
-    // Здесь можно освободить память, если она выделялась динамически
-}
+void MBRPAudioProcessor::releaseResources() {}
 
 #ifndef JucePlugin_PreferredChannelConfigurations
 bool MBRPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    // Требуем стерео вход и стерео выход
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo())
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo() ||
+        layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
     return true;
 }
@@ -146,174 +172,221 @@ bool MBRPAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) cons
 
 void MBRPAudioProcessor::updateParameters()
 {
-    // Получаем текущие значения параметров
-    float lowMidFreq = apvts->getRawParameterValue("lowMidCrossover")->load();
-    float midHighFreq = apvts->getRawParameterValue("midHighCrossover")->load();
+    float lowMidFreq = lowMidCrossover->get();
+    float midHighFreq = midHighCrossover->get();
+
     float lowPanParam = apvts->getRawParameterValue("lowPan")->load();
     float midPanParam = apvts->getRawParameterValue("midPan")->load();
     float highPanParam = apvts->getRawParameterValue("highPan")->load();
 
-    // Гарантируем, что частоты кроссовера не пересекаются некорректно
-    midHighFreq = std::max(midHighFreq, lowMidFreq + 1.0f); // midHigh должна быть выше lowMid
+    midHighFreq = std::max(midHighFreq, lowMidFreq + 1.0f);
 
-    // Обновляем частоты среза фильтров
-    leftLPF1.setCutoffFrequency(lowMidFreq); rightLPF1.setCutoffFrequency(lowMidFreq);
-    leftHPF1.setCutoffFrequency(lowMidFreq); rightHPF1.setCutoffFrequency(lowMidFreq);
-    leftLPF2.setCutoffFrequency(midHighFreq); rightLPF2.setCutoffFrequency(midHighFreq);
-    leftHPF2.setCutoffFrequency(midHighFreq); rightHPF2.setCutoffFrequency(midHighFreq);
-    leftAPF2.setCutoffFrequency(midHighFreq); rightAPF2.setCutoffFrequency(midHighFreq); // All-Pass на частоте 2-го среза
+    leftLowMidLPF.setCutoffFrequency(lowMidFreq);
+    rightLowMidLPF.setCutoffFrequency(lowMidFreq);
+    leftMidHighLPF.setCutoffFrequency(midHighFreq);
+    rightMidHighLPF.setCutoffFrequency(midHighFreq);
 
-    // Рассчитываем гейны панорамы (Constant Power Panning)
-    auto calculatePanGains = [](float panParam, std::atomic<float>& leftGain, std::atomic<float>& rightGain)
-        {
-            constexpr float piOverTwo = (float)M_PI * 0.5f;
-            float angle = (panParam * 0.5f + 0.5f) * piOverTwo; // Преобразуем -1..+1 в 0..pi/2
-            leftGain.store(std::cos(angle));  // Гейн левого = cos(angle)
-            rightGain.store(std::sin(angle)); // Гейн правого = sin(angle)
+    auto calculatePanGains = [](float panParam, std::atomic<float>& leftGain, std::atomic<float>& rightGain) {
+        constexpr float piOverTwo = static_cast<float>(M_PI) * 0.5f;
+        float angle = (panParam * 0.5f + 0.5f) * piOverTwo;
+        leftGain.store(std::cos(angle));
+        rightGain.store(std::sin(angle));
         };
-
     calculatePanGains(lowPanParam, leftLowGain, rightLowGain);
     calculatePanGains(midPanParam, leftMidGain, rightMidGain);
     calculatePanGains(highPanParam, leftHighGain, rightHighGain);
 }
 
+void MBRPAudioProcessor::pushNextSampleToFifo(const juce::AudioBuffer<float>& buffer, const int startChannel,
+    const int numChannels, juce::AbstractFifo& absFifo,
+    juce::AudioBuffer<float>& fifo)
+{
+    const int numSamples = buffer.getNumSamples();
+    const int fifoSize = fifo.getNumSamples();
+
+    if (absFifo.getFreeSpace() < numSamples) return;
+
+    int start1, block1, start2, block2;
+    absFifo.prepareToWrite(numSamples, start1, block1, start2, block2);
+
+    if (block1 > 0) fifo.copyFrom(0, start1 % fifoSize, buffer.getReadPointer(startChannel), block1);
+    if (block2 > 0) fifo.copyFrom(0, start2 % fifoSize, buffer.getReadPointer(startChannel, block1), block2);
+    for (int channel = startChannel + 1; channel < startChannel + numChannels; ++channel) {
+        if (block1 > 0) fifo.addFrom(0, start1 % fifoSize, buffer.getReadPointer(channel), block1);
+        if (block2 > 0) fifo.addFrom(0, start2 % fifoSize, buffer.getReadPointer(channel, block1), block2);
+    }
+
+    absFifo.finishedWrite(block1 + block2);
+    nextFFTBlockReady.store(true); 
+}
 
 void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    juce::ignoreUnused(midiMessages);
     juce::ScopedNoDenormals noDenormals;
     auto totalNumInputChannels = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
-    auto numSamples = buffer.getNumSamples();
+    jassert(totalNumInputChannels >= 1 && totalNumOutputChannels >= 1);
 
-    jassert(totalNumInputChannels == 2 && totalNumOutputChannels == 2);
-    if (totalNumInputChannels != 2 || totalNumOutputChannels != 2) return;
-
-    updateParameters(); // Обновление параметров (можно оптимизировать)
-
-    // --- Подготовка блоков и контекстов ---
-    auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
-    auto lowBandBlock = juce::dsp::AudioBlock<float>(lowBandBuffer);
-    auto midBandBlock = juce::dsp::AudioBlock<float>(midBandBuffer);
-    auto highBandBlock = juce::dsp::AudioBlock<float>(highBandBuffer);
-    auto hpf1OutputBlock = juce::dsp::AudioBlock<float>(hpf1OutputBuffer);
-
-    // Получаем блоки для каждого канала
-    auto leftInputBlock = inputBlock.getSingleChannelBlock(0);
-    auto rightInputBlock = inputBlock.getSingleChannelBlock(1);
-    auto leftLowBlock = lowBandBlock.getSingleChannelBlock(0);
-    auto rightLowBlock = lowBandBlock.getSingleChannelBlock(1);
-    auto leftMidBlock = midBandBlock.getSingleChannelBlock(0);
-    auto rightMidBlock = midBandBlock.getSingleChannelBlock(1);
-    auto leftHighBlock = highBandBlock.getSingleChannelBlock(0);
-    auto rightHighBlock = highBandBlock.getSingleChannelBlock(1);
-    auto leftHpf1OutBlock = hpf1OutputBlock.getSingleChannelBlock(0);
-    auto rightHpf1OutBlock = hpf1OutputBlock.getSingleChannelBlock(1);
-
-    // --- Разделение на полосы (метод с фазовой компенсацией) ---
-
-    // 1. Инициализация буферов копированием входа
-    leftLowBlock.copyFrom(leftInputBlock);
-    rightLowBlock.copyFrom(rightInputBlock);
-    leftMidBlock.copyFrom(leftInputBlock);      // СЧ начнем с входа, потом применим HPF1
-    rightMidBlock.copyFrom(rightInputBlock);
-    // В ВЧ буфер копировать пока не надо, он будет скопирован из выхода HPF1
-
-    // 2. Обработка НЧ полосы (LPF1 -> APF2)
-    juce::dsp::ProcessContextReplacing<float> leftLowCtx(leftLowBlock);
-    juce::dsp::ProcessContextReplacing<float> rightLowCtx(rightLowBlock);
-    leftLPF1.process(leftLowCtx);    // -> leftLowBlock = НЧ L (после LPF1)
-    rightLPF1.process(rightLowCtx);   // -> rightLowBlock = НЧ R (после LPF1)
-    leftAPF2.process(leftLowCtx);    // -> leftLowBlock = НЧ L (после LPF1 + APF2)
-    rightAPF2.process(rightLowCtx);   // -> rightLowBlock = НЧ R (после LPF1 + APF2)
-
-    // 3. Обработка СЧ полосы (HPF1 -> LPF2)
-    juce::dsp::ProcessContextReplacing<float> leftMidCtx(leftMidBlock);
-    juce::dsp::ProcessContextReplacing<float> rightMidCtx(rightMidBlock);
-    leftHPF1.process(leftMidCtx);    // -> leftMidBlock = (СЧ+ВЧ) L
-    rightHPF1.process(rightMidCtx);   // -> rightMidBlock = (СЧ+ВЧ) R
-    // Копируем результат HPF1 во временный буфер И в буфер ВЧ
-    leftHpf1OutBlock.copyFrom(leftMidBlock);
-    rightHpf1OutBlock.copyFrom(rightMidBlock);
-    leftHighBlock.copyFrom(leftHpf1OutBlock); // <--- Копируем сюда для ВЧ
-    rightHighBlock.copyFrom(rightHpf1OutBlock);
-    // Применяем LPF2 к (СЧ+ВЧ) в буфере СЧ
-    leftLPF2.process(leftMidCtx);    // -> leftMidBlock = СЧ L
-    rightLPF2.process(rightMidCtx);   // -> rightMidBlock = СЧ R
-
-    // 4. Обработка ВЧ полосы (используем скопированный результат HPF1 и применяем HPF2)
-    juce::dsp::ProcessContextReplacing<float> leftHighCtx(leftHighBlock);
-    juce::dsp::ProcessContextReplacing<float> rightHighCtx(rightHighBlock);
-    leftHPF2.process(leftHighCtx);   // -> leftHighBlock = ВЧ L
-    rightHPF2.process(rightHighCtx);  // -> rightHighBlock = ВЧ R
-
-    // --- Применение панорамы и суммирование ---
-    buffer.clear(); // Очищаем оригинальный буфер для записи результата
-
-    auto* leftOut = buffer.getWritePointer(0);
-    auto* rightOut = buffer.getWritePointer(1);
-    // Читаем из финальных буферов полос
-    const auto* leftLowIn = lowBandBuffer.getReadPointer(0);
-    const auto* rightLowIn = lowBandBuffer.getReadPointer(1);
-    const auto* leftMidIn = midBandBuffer.getReadPointer(0);
-    const auto* rightMidIn = midBandBuffer.getReadPointer(1);
-    const auto* leftHighIn = highBandBuffer.getReadPointer(0);
-    const auto* rightHighIn = highBandBuffer.getReadPointer(1);
-
-    // Загружаем атомарные гейны
-    float llg = leftLowGain.load(); float rlg = rightLowGain.load();
-    float lmg = leftMidGain.load(); float rmg = rightMidGain.load();
-    float lhg = leftHighGain.load(); float rhg = rightHighGain.load();
-
-    for (int sample = 0; sample < numSamples; ++sample)
+    if (bypassParameter != nullptr && bypassParameter->get())
     {
-        // Панорамирование
-        float lowL = leftLowIn[sample] * llg;
-        float lowR = rightLowIn[sample] * rlg;
-        float midL = leftMidIn[sample] * lmg;
-        float midR = rightMidIn[sample] * rmg;
-        float highL = leftHighIn[sample] * lhg;
-        float highR = rightHighIn[sample] * rhg;
+        // Р•СЃР»Рё РІ Р±Р°Р№РїР°СЃРµ, РїСЂРѕСЃС‚Рѕ РєРѕРїРёСЂСѓРµРј РІС…РѕРґ РЅР° РІС‹С…РѕРґ (РµСЃР»Рё РєР°РЅР°Р»С‹ СЃРѕРІРїР°РґР°СЋС‚)
+        // РР»Рё РѕР±СЂР°Р±Р°С‚С‹РІР°РµРј СЂР°Р·РЅРёС†Сѓ РєР°РЅР°Р»РѕРІ РїРѕ РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё
+        // Р’ РґР°РЅРЅРѕРј СЃР»СѓС‡Р°Рµ РїСЂРѕСЃС‚Рѕ РІС‹С…РѕРґРёРј, С‚Р°Рє РєР°Рє Р±СѓС„РµСЂ СѓР¶Рµ СЃРѕРґРµСЂР¶РёС‚ РІС…РѕРґРЅРѕР№ СЃРёРіРЅР°Р»
+        // РќРѕ РЅСѓР¶РЅРѕ СѓР±РµРґРёС‚СЊСЃСЏ, С‡С‚Рѕ РјС‹ РЅРµ РѕС‡РёС‰Р°РµРј РІС‹С…РѕРґРЅС‹Рµ РєР°РЅР°Р»С‹ РґР°Р»РµРµ РїРѕ РєРѕРґСѓ,
+        // РєРѕС‚РѕСЂС‹С… РЅРµС‚ РІРѕ РІС…РѕРґРЅРѕРј СЃРёРіРЅР°Р»Рµ (РµСЃР»Рё РєРѕРЅС„РёРіСѓСЂР°С†РёСЏ РЅРµ СЃС‚РµСЂРµРѕ->СЃС‚РµСЂРµРѕ)
 
-        // Суммирование
-        leftOut[sample] = lowL + midL + highL;
-        rightOut[sample] = lowR + midR + highR;
+        // Р’Р°Р¶РЅРѕ: РђРЅР°Р»РёР·Р°С‚РѕСЂ РІСЃРµ СЂР°РІРЅРѕ РїРѕР»СѓС‡РёС‚ РґР°РЅРЅС‹Рµ (РЅРµРѕР±СЂР°Р±РѕС‚Р°РЅРЅС‹Рµ)
+        if (copyToFifo.load())
+        {
+            // РћС‚РїСЂР°РІР»СЏРµРј РІС…РѕРґРЅРѕР№ (С‚РµРїРµСЂСЊ Рё РІС‹С…РѕРґРЅРѕР№) СЃРёРіРЅР°Р» РІ FIFO
+            pushNextSampleToFifo(buffer, 0, totalNumInputChannels, abstractFifoInput, audioFifoInput);
+            // Р”Р»СЏ С‡РёСЃС‚РѕС‚С‹ РјРѕР¶РЅРѕ РѕС‚РїСЂР°РІР»СЏС‚СЊ Рё РІ output fifo С‚РѕС‚ Р¶Рµ СЃРёРіРЅР°Р»
+            pushNextSampleToFifo(buffer, 0, totalNumOutputChannels, abstractFifoOutput, audioFifoOutput);
+        }
+        return; // Р’С‹С…РѕРґ РёР· processBlock, РјРёРЅСѓСЏ РѕР±СЂР°Р±РѕС‚РєСѓ
     }
+    jassert(totalNumInputChannels >= 1 && totalNumOutputChannels >= 1);
+
+
+    updateParameters();
+
+
+    if (copyToFifo.load())
+        pushNextSampleToFifo(buffer, 0, totalNumInputChannels, abstractFifoInput, audioFifoInput);
+
+    if (totalNumInputChannels == 2 && totalNumOutputChannels == 2)
+    {
+        auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
+        auto leftInputBlock = inputBlock.getSingleChannelBlock(0);
+        auto rightInputBlock = inputBlock.getSingleChannelBlock(1);
+        auto lowBandBlockOut = juce::dsp::AudioBlock<float>(lowBandBuffer);
+        auto midBandBlockOut = juce::dsp::AudioBlock<float>(midBandBuffer);
+        auto highBandBlockOut = juce::dsp::AudioBlock<float>(highBandBuffer);
+        auto leftLowBlockOut = lowBandBlockOut.getSingleChannelBlock(0);
+        auto rightLowBlockOut = lowBandBlockOut.getSingleChannelBlock(1);
+        auto leftMidBlockOut = midBandBlockOut.getSingleChannelBlock(0);
+        auto rightMidBlockOut = midBandBlockOut.getSingleChannelBlock(1);
+        auto leftHighBlockOut = highBandBlockOut.getSingleChannelBlock(0);
+        auto rightHighBlockOut = highBandBlockOut.getSingleChannelBlock(1);
+        auto lpf2InBuffer = juce::dsp::AudioBlock<float>(intermediateBuffer1);
+        auto leftLpf2InBlock = lpf2InBuffer.getSingleChannelBlock(0);
+        auto rightLpf2InBlock = lpf2InBuffer.getSingleChannelBlock(1);
+
+        leftLowBlockOut.copyFrom(leftInputBlock);
+        rightLowBlockOut.copyFrom(rightInputBlock);
+        juce::dsp::ProcessContextReplacing<float> leftLowCtx(leftLowBlockOut);
+        juce::dsp::ProcessContextReplacing<float> rightLowCtx(rightLowBlockOut);
+        leftLowMidLPF.process(leftLowCtx);
+        rightLowMidLPF.process(rightLowCtx);
+
+        leftLpf2InBlock.copyFrom(leftInputBlock);
+        rightLpf2InBlock.copyFrom(rightInputBlock);
+        juce::dsp::ProcessContextReplacing<float> leftLpf2Ctx(leftLpf2InBlock);
+        juce::dsp::ProcessContextReplacing<float> rightLpf2Ctx(rightLpf2InBlock);
+        leftMidHighLPF.process(leftLpf2Ctx);
+        rightMidHighLPF.process(rightLpf2Ctx);
+
+        leftMidBlockOut.copyFrom(leftLpf2InBlock);
+        rightMidBlockOut.copyFrom(rightLpf2InBlock);
+        leftMidBlockOut.subtract(leftLowBlockOut);
+        rightMidBlockOut.subtract(rightLowBlockOut);
+
+        leftHighBlockOut.copyFrom(leftInputBlock);
+        rightHighBlockOut.copyFrom(rightInputBlock);
+        leftHighBlockOut.subtract(leftLpf2InBlock);
+        rightHighBlockOut.subtract(rightLpf2InBlock);
+
+        buffer.clear();
+        auto* leftOut = buffer.getWritePointer(0);
+        auto* rightOut = buffer.getWritePointer(1);
+        const auto* leftLowIn = lowBandBuffer.getReadPointer(0);
+        const auto* rightLowIn = lowBandBuffer.getReadPointer(1);
+        const auto* leftMidIn = midBandBuffer.getReadPointer(0);
+        const auto* rightMidIn = midBandBuffer.getReadPointer(1);
+        const auto* leftHighIn = highBandBuffer.getReadPointer(0);
+        const auto* rightHighIn = highBandBuffer.getReadPointer(1);
+
+        float llg = leftLowGain.load(); float rlg = rightLowGain.load();
+        float lmg = leftMidGain.load(); float rmg = rightMidGain.load();
+        float lhg = leftHighGain.load(); float rhg = rightHighGain.load();
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample) {
+            float lowL = leftLowIn[sample] * llg; float lowR = rightLowIn[sample] * rlg;
+            float midL = leftMidIn[sample] * lmg; float midR = rightMidIn[sample] * rmg;
+            float highL = leftHighIn[sample] * lhg; float highR = rightHighIn[sample] * rhg;
+            leftOut[sample] = lowL + midL + highL;
+            rightOut[sample] = lowR + midR + highR;
+        }
+    }
+    else
+    {
+        // РћР±СЂР°Р±РѕС‚РєР° РґР»СЏ РґСЂСѓРіРёС… РєРѕРЅС„РёРіСѓСЂР°С†РёР№ РєР°РЅР°Р»РѕРІ (РµСЃР»Рё РЅСѓР¶РЅР°)
+        // РќР°РїСЂРёРјРµСЂ, РїСЂРѕСЃС‚РѕРµ РєРѕРїРёСЂРѕРІР°РЅРёРµ РёР»Рё РѕС‡РёСЃС‚РєР°
+        for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+            buffer.clear(i, 0, buffer.getNumSamples());
+    }
+
+    if (copyToFifo.load())
+        pushNextSampleToFifo(buffer, 0, totalNumOutputChannels, abstractFifoOutput, audioFifoOutput);
 }
 
-//==============================================================================
-bool MBRPAudioProcessor::hasEditor() const
-{
-    return true; // Да, редактор есть
-}
+bool MBRPAudioProcessor::hasEditor() const { return true; }
 
-juce::AudioProcessorEditor* MBRPAudioProcessor::createEditor()
-{
-    // Создаем и возвращаем экземпляр нашего редактора
+juce::AudioProcessorEditor* MBRPAudioProcessor::createEditor() {
     return new MBRPAudioProcessorEditor(*this);
 }
 
-//==============================================================================
 void MBRPAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    // Сохраняем состояние APVTS
-    juce::MemoryOutputStream mos(destData, false);
-    apvts->state.writeToStream(mos);
+    auto state = apvts->copyState();
+    state.setProperty("editorSizeX", editorSize.x, nullptr);
+    state.setProperty("editorSizeY", editorSize.y, nullptr);
+    std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    copyXmlToBinary(*xml, destData);
 }
 
 void MBRPAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    // Загружаем состояние APVTS
-    auto tree = juce::ValueTree::readFromData(data, size_t(sizeInBytes));
-    if (tree.isValid())
-    {
-        apvts->replaceState(tree);
-        updateParameters(); // Обновляем параметры плагина после загрузки состояния
+    std::unique_ptr<juce::XmlElement> xmlState(getXmlFromBinary(data, sizeInBytes));
+    if (xmlState != nullptr) {
+        if (xmlState->hasTagName(apvts->state.getType())) {
+            apvts->replaceState(juce::ValueTree::fromXml(*xmlState));
+            editorSize.setX(apvts->state.getProperty("editorSizeX", 900));
+            editorSize.setY(apvts->state.getProperty("editorSizeY", 700));
+            if (auto* editor = getActiveEditor()) editor->setSize(editorSize.x, editorSize.y);
+            updateParameters();
+        }
     }
 }
 
-//==============================================================================
-// Фабричная функция, вызываемая хостом для создания экземпляра плагина
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+void MBRPAudioProcessor::parameterChanged(const juce::String& parameterID, float newValue)
 {
+    juce::ignoreUnused(parameterID, newValue);
+}
+
+void MBRPAudioProcessor::setCopyToFifo(bool _copyToFifo)
+{
+    if (_copyToFifo != copyToFifo.load()) {
+        copyToFifo.store(_copyToFifo);
+        if (_copyToFifo) {
+            const int fifoSizeSamples = fftSize * 2;
+            abstractFifoInput.setTotalSize(fifoSizeSamples);
+            abstractFifoOutput.setTotalSize(fifoSizeSamples);
+            audioFifoInput.setSize(1, fifoSizeSamples);
+            audioFifoOutput.setSize(1, fifoSizeSamples);
+            abstractFifoInput.reset();
+            abstractFifoOutput.reset();
+            audioFifoInput.clear();
+            audioFifoOutput.clear();
+            DBG("FIFO Copying Enabled. FIFO size: " << fifoSizeSamples);
+        }
+        else {
+            DBG("FIFO Copying Disabled.");
+        }
+    }
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
     return new MBRPAudioProcessor();
 }

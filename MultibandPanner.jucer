@@ -1,19 +1,62 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="VIqBol" name="MBRP" projectType="audioplug" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="GoldNGrid">
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="GoldNGrid"
+              pluginVST3Category="Reverb,Spatial">
   <MAINGROUP id="UIw0zL" name="MBRP">
     <GROUP id="{240ADC6D-992C-2E44-53A0-FA4D2498D38F}" name="Source">
-      <FILE id="qZFM41" name="PluginProcessor.cpp" compile="1" resource="0"
-            file="Source/PluginProcessor.cpp"/>
+      <GROUP id="{A5234751-10F8-2D5A-BE0C-72AEF3C19321}" name="DSP">
+        <FILE id="o9QrbF" name="Params.cpp" compile="1" resource="0" file="Source/DSP/Params.cpp"/>
+        <FILE id="Ie1xJ3" name="Params.h" compile="0" resource="0" file="Source/DSP/Params.h"/>
+      </GROUP>
+      <GROUP id="{21AFCF64-F6C6-CABB-BC52-86E6A41E2038}" name="GUI">
+        <GROUP id="{3228495B-DC04-A623-A534-06EDA9303D92}" name="AnalyzerOverlay">
+          <FILE id="Mh5nzh" name="AnalyzerOverlay.cpp" compile="1" resource="0"
+                file="Source/GUI/AnlyzerOverlay/AnalyzerOverlay.cpp"/>
+          <FILE id="IoQhhU" name="AnalyzerOverlay.h" compile="0" resource="0"
+                file="Source/GUI/AnlyzerOverlay/AnalyzerOverlay.h"/>
+        </GROUP>
+        <GROUP id="{065ABFFC-94BF-E557-9A0F-73AA18175BA0}" name="SpectrumAnalyzer">
+          <FILE id="ndX2tO" name="SpectrumAnalyzer.cpp" compile="1" resource="0"
+                file="Source/GUI/SpectrumAnalyzer/SpectrumAnalyzer.cpp"/>
+          <FILE id="q9U9jd" name="SpectrumAnalyzer.h" compile="0" resource="0"
+                file="Source/GUI/SpectrumAnalyzer/SpectrumAnalyzer.h"/>
+        </GROUP>
+        <FILE id="C8w3wb" name="BandSelectControls.cpp" compile="1" resource="0"
+              file="Source/GUI/BandSelectControls.cpp"/>
+        <FILE id="YkjwaY" name="BandSelectControls.h" compile="0" resource="0"
+              file="Source/GUI/BandSelectControls.h"/>
+        <FILE id="ZsKl8F" name="CustomButtons.cpp" compile="1" resource="0"
+              file="Source/GUI/CustomButtons.cpp"/>
+        <FILE id="sHinSU" name="CustomButtons.h" compile="0" resource="0" file="Source/GUI/CustomButtons.h"/>
+        <FILE id="ipRNJs" name="GlobalControls.cpp" compile="1" resource="0"
+              file="Source/GUI/GlobalControls.cpp"/>
+        <FILE id="NLkK1c" name="GlobalControls.h" compile="0" resource="0"
+              file="Source/GUI/GlobalControls.h"/>
+        <FILE id="cmBBP9" name="LookAndFeel.cpp" compile="1" resource="0" file="Source/GUI/LookAndFeel.cpp"/>
+        <FILE id="gG0uJA" name="LookAndFeel.h" compile="0" resource="0" file="Source/GUI/LookAndFeel.h"/>
+        <FILE id="qs5rpZ" name="RotarySliderWithLabels.cpp" compile="1" resource="0"
+              file="Source/GUI/RotarySliderWithLabels.cpp"/>
+        <FILE id="k6eD2s" name="RotarySliderWithLabels.h" compile="0" resource="0"
+              file="Source/GUI/RotarySliderWithLabels.h"/>
+        <FILE id="WFdRCw" name="Utilities.cpp" compile="1" resource="0" file="Source/GUI/Utilities.cpp"/>
+        <FILE id="aTMhkr" name="Utilities.h" compile="0" resource="0" file="Source/GUI/Utilities.h"/>
+        <FILE id="lgzaJW" name="UtilityComponents.cpp" compile="1" resource="0"
+              file="Source/GUI/UtilityComponents.cpp"/>
+        <FILE id="zt5AUr" name="UtilityComponents.h" compile="0" resource="0"
+              file="Source/GUI/UtilityComponents.h"/>
+      </GROUP>
       <FILE id="ffUnQ0" name="PluginProcessor.h" compile="0" resource="0"
             file="Source/PluginProcessor.h"/>
       <FILE id="UGSj7y" name="PluginEditor.cpp" compile="1" resource="0"
             file="Source/PluginEditor.cpp"/>
       <FILE id="gEt8lI" name="PluginEditor.h" compile="0" resource="0" file="Source/PluginEditor.h"/>
+      <FILE id="dqhOBb" name="PluginProcessor.cpp" compile="1" resource="0"
+            file="Source/PluginProcessor.cpp"/>
     </GROUP>
   </MAINGROUP>
   <MODULES>
+    <MODULE id="juce_animation" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
@@ -50,6 +93,7 @@
         <MODULEPATH id="juce_graphics" path="../../../Desktop/juce/modules"/>
         <MODULEPATH id="juce_gui_basics" path="../../../Desktop/juce/modules"/>
         <MODULEPATH id="juce_gui_extra" path="../../../Desktop/juce/modules"/>
+        <MODULEPATH id="juce_animation" path="../../../Desktop/juce/modules"/>
       </MODULEPATHS>
     </VS2022>
   </EXPORTFORMATS>
