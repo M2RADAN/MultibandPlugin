@@ -47,6 +47,12 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     controlBar.analyzerButton.setToggleState(initialAnalyzerState, juce::dontSendNotification);
     handleAnalyzerToggle(initialAnalyzerState); // Применяем начальное состояние
 
+    bypassAttachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), "bypass", bypassButton);
+
+    bypassButton.setButtonText("Bypass"); // Текст может не отображаться для PowerButton
+    bypassButton.setTooltip("Bypass the plugin processing");
+    bypassButton.setClickingTogglesState(true); // Обязательно для аттачмента
+    addAndMakeVisible(bypassButton);
 
 
     auto setupStandardSlider = [&](juce::Slider& slider, juce::Label& label, const juce::String& labelText) {
@@ -108,7 +114,10 @@ void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     int padding = 10;
     int controlBarHeight = 32; // Óáðàë, åñëè ControlBar íå èñïîëüçóåòñÿ àêòèâíî
-    controlBar.setBounds(bounds.removeFromTop(controlBarHeight).reduced(padding, 0));
+
+    auto topArea = bounds.removeFromTop(controlBarHeight).reduced(padding, 0);
+    controlBar.setBounds(topArea.removeFromLeft(topArea.getWidth() / 2)); // Например, половину ширины
+    bypassButton.setBounds(topArea.removeFromRight(60).reduced(0, 2)); // Кнопка справа, размер по вкусу
 
     int analyzerHeight = 300; // Íåìíîãî óìåíüøèì àíàëèçàòîð
     auto analyzerArea = bounds.removeFromTop(analyzerHeight).reduced(padding, 0); // Äîáàâèì îòñòóïû ïî áîêàì

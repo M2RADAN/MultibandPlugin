@@ -128,30 +128,25 @@ void LookAndFeel::drawToggleButton(juce::Graphics& g,
     {
         Path powerButtonPath;
         auto bounds = toggleButton.getLocalBounds();
-        // Calculate size ensuring it fits
-        auto size = static_cast<float>(jmin(bounds.getWidth(), bounds.getHeight()) - 6); // Use float size
-        auto r = bounds.withSizeKeepingCentre(roundToInt(size), roundToInt(size)).toFloat(); // Back to int for rect, then float
-        float ang = 30.f; // Angle for the gap
+        auto size = static_cast<float>(jmin(bounds.getWidth(), bounds.getHeight()) - 6);
+        auto r = bounds.withSizeKeepingCentre(roundToInt(size), roundToInt(size)).toFloat();
+        float ang = 30.f;
+        size -= 6.f;
 
-        size -= 6.f; // Reduce size for arc drawing
-
-        // Draw the arc part
-        powerButtonPath.addCentredArc(r.getCentreX(), r.getCentreY(),
-            size * 0.5f, size * 0.5f,
-            0.f, degreesToRadians(ang), degreesToRadians(360.f - ang),
-            true);
-        // Draw the line part
+        powerButtonPath.addCentredArc(r.getCentreX(), r.getCentreY(), size * 0.5f, size * 0.5f, 0.f, degreesToRadians(ang), degreesToRadians(360.f - ang), true);
         powerButtonPath.startNewSubPath(r.getCentreX(), r.getY());
         powerButtonPath.lineTo(r.getCentre());
 
-        PathStrokeType strokeType(2.f, PathStrokeType::JointStyle::curved); // Float thickness
+        PathStrokeType strokeType(2.f, PathStrokeType::JointStyle::curved);
 
-        // Determine color based on state
-        auto color = toggleButton.getToggleState() ? Colours::dimgrey : ColorScheme::getSliderRangeTextColor();
+        // --- РњРµРЅСЏРµРј С†РІРµС‚ РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ СЃРѕСЃС‚РѕСЏРЅРёСЏ ---
+        // РСЃРїРѕР»СЊР·СѓРµРј СЏСЂРєРёР№ С†РІРµС‚ (РЅР°РїСЂРёРјРµСЂ, thumb color) РґР»СЏ "РІС‹РєР»СЋС‡РµРЅРѕ" (РЅРµ bypass)
+        // РСЃРїРѕР»СЊР·СѓРµРј С‚СѓСЃРєР»С‹Р№/СЃРµСЂС‹Р№ С†РІРµС‚ РґР»СЏ "РІРєР»СЋС‡РµРЅРѕ" (bypass)
+        auto color = !pb->getToggleState() ? ColorScheme::getSliderThumbColor() // РЇСЂРєРёР№, РєРѕРіРґР° РѕР±СЂР°Р±РѕС‚РєР° Р’РљР›СЋС‡РµРЅР° (Bypass Р’Р«РљР»СЋС‡РµРЅ)
+            : ColorScheme::getSecondaryTextColor(); // РўСѓСЃРєР»С‹Р№, РєРѕРіРґР° РѕР±СЂР°Р±РѕС‚РєР° Р’Р«РљР›СЋС‡РµРЅР° (Bypass Р’РљР›СЋС‡РµРЅ)
+        // ----------------------------------------------
         g.setColour(color);
         g.strokePath(powerButtonPath, strokeType);
-        // Draw outer circle
-        // g.drawEllipse(r, 2.f); // Optional outer circle
     }
     else if (auto* analyzerButton = dynamic_cast<AnalyzerButton*>(&toggleButton))
     {
@@ -176,9 +171,9 @@ void LookAndFeel::drawToggleButton(juce::Graphics& g,
         Colour textColour;
 
         if (buttonIsOn) {
-            // Определяем цвет фона активной кнопки по ее имени (тексту)
-            // Это менее надежно, чем если бы кнопки имели ID или если бы LookAndFeel
-            // имел доступ к контексту, но для 3 кнопок это сработает.
+            // РћРїСЂРµРґРµР»СЏРµРј С†РІРµС‚ С„РѕРЅР° Р°РєС‚РёРІРЅРѕР№ РєРЅРѕРїРєРё РїРѕ РµРµ РёРјРµРЅРё (С‚РµРєСЃС‚Сѓ)
+            // Р­С‚Рѕ РјРµРЅРµРµ РЅР°РґРµР¶РЅРѕ, С‡РµРј РµСЃР»Рё Р±С‹ РєРЅРѕРїРєРё РёРјРµР»Рё ID РёР»Рё РµСЃР»Рё Р±С‹ LookAndFeel
+            // РёРјРµР» РґРѕСЃС‚СѓРї Рє РєРѕРЅС‚РµРєСЃС‚Сѓ, РЅРѕ РґР»СЏ 3 РєРЅРѕРїРѕРє СЌС‚Рѕ СЃСЂР°Р±РѕС‚Р°РµС‚.
             if (toggleButton.getButtonText().equalsIgnoreCase("Low")) {
                 backgroundColour = ColorScheme::getLowBandColor();
             }
@@ -189,28 +184,28 @@ void LookAndFeel::drawToggleButton(juce::Graphics& g,
                 backgroundColour = ColorScheme::getHighBandColor();
             }
             else {
-                backgroundColour = ColorScheme::getSliderThumbColor(); // Запасной цвет
+                backgroundColour = ColorScheme::getSliderThumbColor(); // Р—Р°РїР°СЃРЅРѕР№ С†РІРµС‚
             }
-            borderColour = backgroundColour.darker(0.2f); // Граница чуть темнее фона
-            textColour = ColorScheme::getToggleButtonOnTextColor(); // Белый текст
+            borderColour = backgroundColour.darker(0.2f); // Р“СЂР°РЅРёС†Р° С‡СѓС‚СЊ С‚РµРјРЅРµРµ С„РѕРЅР°
+            textColour = ColorScheme::getToggleButtonOnTextColor(); // Р‘РµР»С‹Р№ С‚РµРєСЃС‚
         }
         else {
-            backgroundColour = ColorScheme::getToggleButtonOffColor();   // Светло-серый фон
-            borderColour = ColorScheme::getToggleButtonOffBorder(); // Серая граница
-            textColour = ColorScheme::getToggleButtonOffTextColor(); // Темно-серый текст
+            backgroundColour = ColorScheme::getToggleButtonOffColor();   // РЎРІРµС‚Р»Рѕ-СЃРµСЂС‹Р№ С„РѕРЅ
+            borderColour = ColorScheme::getToggleButtonOffBorder(); // РЎРµСЂР°СЏ РіСЂР°РЅРёС†Р°
+            textColour = ColorScheme::getToggleButtonOffTextColor(); // РўРµРјРЅРѕ-СЃРµСЂС‹Р№ С‚РµРєСЃС‚
         }
 
-        // Рисуем фон
+        // Р РёСЃСѓРµРј С„РѕРЅ
         g.setColour(backgroundColour);
         g.fillRoundedRectangle(boundsRect.toFloat(), cornerSize);
 
-        // Рисуем границу
+        // Р РёСЃСѓРµРј РіСЂР°РЅРёС†Сѓ
         g.setColour(borderColour);
         g.drawRoundedRectangle(boundsRect.toFloat(), cornerSize, 1.f);
 
-        // Рисуем текст
+        // Р РёСЃСѓРµРј С‚РµРєСЃС‚
         g.setColour(textColour);
-        g.setFont(juce::Font(14.0f)); // Можно сделать шрифт чуть жирнее: Font(14.0f, Font::bold)
+        g.setFont(juce::Font(14.0f)); // РњРѕР¶РЅРѕ СЃРґРµР»Р°С‚СЊ С€СЂРёС„С‚ С‡СѓС‚СЊ Р¶РёСЂРЅРµРµ: Font(14.0f, Font::bold)
         g.drawFittedText(toggleButton.getButtonText(), boundsRect, Justification::centred, 1);
     }
 }

@@ -70,6 +70,8 @@ public:
     void setSavedEditorSize(const juce::Point<int>& size) { editorSize = size; }
     // ---------------------------------------------
     bool isCopyToFifoEnabled() const { return copyToFifo.load(); }
+
+    juce::AudioParameterBool* bypassParameter{ nullptr };
 private:
     std::unique_ptr<juce::AudioProcessorValueTreeState> apvts;
 

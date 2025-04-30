@@ -73,13 +73,14 @@ private:
     juce::Label lowMidCrossoverLabel, midHighCrossoverLabel;
     RotarySliderWithLabels panSlider;
     juce::Label panLabel;
-
+    PowerButton bypassButton;
     // Attachments
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
+    using ButtonAttachment = APVTS::ButtonAttachment;
     SliderAttachment lowMidCrossoverAttachment, midHighCrossoverAttachment;
     std::unique_ptr<SliderAttachment> panAttachment;
-
+    std::unique_ptr<ButtonAttachment> bypassAttachment;
     // Методы
     void updatePanAttachment(int bandIndex);
     void handleBandAreaClick(int bandIndex); // <-- Объявляем новый метод-обработчик

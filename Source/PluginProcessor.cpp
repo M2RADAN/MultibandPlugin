@@ -18,11 +18,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
     const ParameterID lowPanParamID{ "lowPan", 1 };
     const ParameterID midPanParamID{ "midPan", 1 };
     const ParameterID highPanParamID{ "highPan", 1 };
+    const ParameterID bypassParamID{ "bypass", 1 }; // ID для байпаса
+
 
     auto lowMidRange = NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.25f);
     auto midHighRange = NormalisableRange<float>(500.0f, 20000.0f, 1.0f, 0.25f);
     auto panRange = NormalisableRange<float>(-1.0f, 1.0f, 0.01f);
-
+    auto bypassStrings = StringArray{ "Off", "On" }; // Или "Active", "Bypassed"
 
     auto freqValueToText = [](float v, int ) { return juce::String(v, 0) + " Hz"; };
     auto kHzValueToText = [](float v, int ) {
@@ -65,6 +67,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
         "%L/R", AudioProcessorParameter::genericParameter, panValueToText, panTextToValue
     ));
 
+    layout.add(std::make_unique<AudioParameterBool>(
+        bypassParamID,          // ID
+        "Bypass",               // Имя параметра
+        false,                  // Значение по умолчанию
+        juce::AudioParameterBoolAttributes().withLabel("Bypass").withStringFromValueFunction([bypassStrings](bool v, int) { return bypassStrings[v ? 1 : 0]; }) // Используем атрибуты для label и strings
+        .withValueFromStringFunction([bypassStrings](const String& text) { return bypassStrings.indexOf(text) == 1; }) // Добавляем обратное преобразование
+    ));
+
     return layout;
 }
 
@@ -91,6 +101,18 @@ MBRPAudioProcessor::MBRPAudioProcessor()
     lowMidCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("lowMidCrossover"));
     midHighCrossover = dynamic_cast<juce::AudioParameterFloat*>(apvts->getParameter("midHighCrossover"));
     jassert(lowMidCrossover != nullptr && midHighCrossover != nullptr);
+
+    bypassParameter = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("bypass"));
+    jassert(bypassParameter != nullptr); // Убедимся, что параметр найден
+    // -------------------------------------------------
+
+    // Добавляем Listener (если еще не добавлен)
+    apvts->addParameterListener("bypass", this);
+    apvts->addParameterListener("lowMidCrossover", this); // Добавьте листенеры и для других параметров, если нужно
+    apvts->addParameterListener("midHighCrossover", this);
+    apvts->addParameterListener("lowPan", this);
+    apvts->addParameterListener("midPan", this);
+    apvts->addParameterListener("highPan", this);
 
 }
 
@@ -206,6 +228,27 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     auto totalNumOutputChannels = getTotalNumOutputChannels();
     jassert(totalNumInputChannels >= 1 && totalNumOutputChannels >= 1);
 
+    if (bypassParameter != nullptr && bypassParameter->get())
+    {
+        // Если в байпасе, просто копируем вход на выход (если каналы совпадают)
+        // Или обрабатываем разницу каналов по необходимости
+        // В данном случае просто выходим, так как буфер уже содержит входной сигнал
+        // Но нужно убедиться, что мы не очищаем выходные каналы далее по коду,
+        // которых нет во входном сигнале (если конфигурация не стерео->стерео)
+
+        // Важно: Анализатор все равно получит данные (необработанные)
+        if (copyToFifo.load())
+        {
+            // Отправляем входной (теперь и выходной) сигнал в FIFO
+            pushNextSampleToFifo(buffer, 0, totalNumInputChannels, abstractFifoInput, audioFifoInput);
+            // Для чистоты можно отправлять и в output fifo тот же сигнал
+            pushNextSampleToFifo(buffer, 0, totalNumOutputChannels, abstractFifoOutput, audioFifoOutput);
+        }
+        return; // Выход из processBlock, минуя обработку
+    }
+    jassert(totalNumInputChannels >= 1 && totalNumOutputChannels >= 1);
+
+
     updateParameters();
 
 
@@ -275,6 +318,13 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             leftOut[sample] = lowL + midL + highL;
             rightOut[sample] = lowR + midR + highR;
         }
+    }
+    else
+    {
+        // Обработка для других конфигураций каналов (если нужна)
+        // Например, простое копирование или очистка
+        for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+            buffer.clear(i, 0, buffer.getNumSamples());
     }
 
     if (copyToFifo.load())
