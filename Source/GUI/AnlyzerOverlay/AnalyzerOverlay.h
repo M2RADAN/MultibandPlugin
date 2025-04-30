@@ -66,8 +66,8 @@ namespace MBRP_GUI
         enum class HoverState { None, HoveringLowMid, HoveringMidHigh }; // <-- Добавлено
         HoverState currentHoverState{ HoverState::None };                // <-- Добавлено
         HoverState lastHoverStateForColor { HoverState::None };
-        const float dragTolerance = 20.0f;
-        const float highlightRectWidth = 20.0f;  // change appropriatly
+        const float dragTolerance = 8.0f;
+        const float highlightRectWidth = 8.0f;  // change appropriatly
 
         float currentHighlightAlpha = 0.0f;  // <-- Добавлено: Текущая прозрачность
         float targetHighlightAlpha = 0.0f;   // <-- Добавлено: Целевая прозрачность

@@ -236,63 +236,71 @@ namespace MBRP_GUI
     // Нажатие мыши
     void AnalyzerOverlay::mouseDown(const juce::MouseEvent& event)
     {
-        // ... (проверка graphBounds.contains) ...
         auto graphBounds = getGraphBounds();
         if (!graphBounds.contains(event.getPosition().toFloat()))
         {
             currentDraggingState = DraggingState::None;
             targetHighlightAlpha = 0.0f;
-            // Не сбрасываем lastHoverStateForColor здесь
             currentHoverState = HoverState::None;
+            // Не сбрасываем lastHoverStateForColor
             return;
         }
 
-        // ... (определение lowMidX, midHighX) ...
         float mouseX = static_cast<float>(event.x);
         float lowMidX = mapFreqToXLog(lowMidXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
         float midHighX = mapFreqToXLog(midHighXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
 
-        // ... (определение newDraggingState, initialHoverState, initialTargetAlpha) ...
-        DraggingState newDraggingState = DraggingState::None;
-        HoverState initialHoverState = HoverState::None;
-        float initialTargetAlpha = 0.0f;
+        bool needsRepaint = false; // Флаг для вызова repaint в конце
 
         if (std::abs(mouseX - lowMidX) < dragTolerance) {
-            newDraggingState = DraggingState::DraggingLowMid;
-            initialHoverState = HoverState::HoveringLowMid;
-            initialTargetAlpha = targetAlphaValue;
+            // --- Начинаем драг LowMid ---
+            currentDraggingState = DraggingState::DraggingLowMid;
+            currentHoverState = HoverState::HoveringLowMid; // Устанавливаем текущее состояние
+            lastHoverStateForColor = currentHoverState;     // Запоминаем для цвета
+            targetHighlightAlpha = targetAlphaValue;        // Цель - показать
+            currentHighlightAlpha = targetAlphaValue;       // Показываем мгновенно
             lowMidXoverParam.beginChangeGesture();
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            needsRepaint = true; // Нужно перерисовать
         }
         else if (std::abs(mouseX - midHighX) < dragTolerance) {
-            newDraggingState = DraggingState::DraggingMidHigh;
-            initialHoverState = HoverState::HoveringMidHigh;
-            initialTargetAlpha = targetAlphaValue;
+            // --- Начинаем драг MidHigh ---
+            currentDraggingState = DraggingState::DraggingMidHigh;
+            currentHoverState = HoverState::HoveringMidHigh; // Устанавливаем текущее состояние
+            lastHoverStateForColor = currentHoverState;      // Запоминаем для цвета
+            targetHighlightAlpha = targetAlphaValue;         // Цель - показать
+            currentHighlightAlpha = targetAlphaValue;        // Показываем мгновенно
             midHighXoverParam.beginChangeGesture();
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            needsRepaint = true; // Нужно перерисовать
         }
-        else { // Клик по области
-            newDraggingState = DraggingState::None;
-            initialHoverState = HoverState::None;
-            initialTargetAlpha = 0.0f;
+        else {
+            // --- Клик по области ---
+            currentDraggingState = DraggingState::None; // Не перетаскиваем
+            // Запоминаем последнее состояние перед сбросом, если оно было
+            if (currentHoverState != HoverState::None) {
+                lastHoverStateForColor = currentHoverState;
+            }
+            currentHoverState = HoverState::None;       // Сбрасываем текущее наведение
+            targetHighlightAlpha = 0.0f;                // Запускаем затухание, если подсветка была
             setMouseCursor(juce::MouseCursor::NormalCursor);
-            // ... (onBandAreaClicked) ...
+
+            float clickedFreq = xToFrequency(mouseX, graphBounds);
+            int bandIndex = (clickedFreq < lowMidXoverParam.get()) ? 0 : ((clickedFreq < midHighXoverParam.get()) ? 1 : 2);
+
+            if (onBandAreaClicked) {
+                onBandAreaClicked(bandIndex); // Вызываем колбэк
+            }
+            DBG("Overlay: Clicked in band area: " << bandIndex);
+
+            // Если подсветка была видна, нужна перерисовка для начала затухания
+            if (currentHighlightAlpha > 0.0f) {
+                needsRepaint = true;
+            }
         }
 
-        currentDraggingState = newDraggingState;
-        currentHoverState = initialHoverState;
-        // Запоминаем последнее состояние для цвета
-        if (initialHoverState != HoverState::None) {
-            lastHoverStateForColor = initialHoverState;
-        }
-        targetHighlightAlpha = initialTargetAlpha;
-        // Мгновенно показываем при начале драга
-        if (currentDraggingState != DraggingState::None) {
-            currentHighlightAlpha = targetAlphaValue;
-            repaint();
-        }
-        else if (currentHighlightAlpha > 0.0f && initialTargetAlpha == 0.0f) {
-            // Если кликнули по области, а подсветка была, начать затухание
+        // Выполняем repaint только один раз в конце, если он нужен
+        if (needsRepaint) {
             repaint();
         }
     }
