@@ -1,12 +1,12 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include <juce_dsp/juce_dsp.h>
+#include <juce_dsp/juce_dsp.h> // <<< ДОБАВИТЬ
 #include <atomic>
-#include <memory> // Для std::unique_ptr
+#include <memory>
 
 //==============================================================================
-class MBRPAudioProcessor : public juce::AudioProcessor, public juce::AudioProcessorValueTreeState::Listener // Добавили Listener
+class MBRPAudioProcessor : public juce::AudioProcessor, public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     MBRPAudioProcessor();
@@ -43,25 +43,34 @@ public:
 
     juce::AudioParameterFloat* lowMidCrossover{ nullptr };
     juce::AudioParameterFloat* midHighCrossover{ nullptr };
-    // std::atomic<float>* prmOutputGain {nullptr}; // Закомментировано, т.к. не используется
+
+    // --- НОВЫЕ: Атомарные указатели на параметры реверба ---
+    std::atomic<float>* lowWetParam = nullptr;
+    std::atomic<float>* lowSpaceParam = nullptr;
+    std::atomic<float>* lowDistanceParam = nullptr;
+    std::atomic<float>* lowDelayParam = nullptr;
+    std::atomic<float>* midWetParam = nullptr;
+    std::atomic<float>* midSpaceParam = nullptr;
+    std::atomic<float>* midDistanceParam = nullptr;
+    std::atomic<float>* midDelayParam = nullptr;
+    std::atomic<float>* highWetParam = nullptr;
+    std::atomic<float>* highSpaceParam = nullptr;
+    std::atomic<float>* highDistanceParam = nullptr;
+    std::atomic<float>* highDelayParam = nullptr;
+    // ----------------------------------------------------
 
     // Listener для параметров (если нужен)
     void parameterChanged(const juce::String& parameterID, float newValue) override;
 
 
     // --- Члены для Анализатора Спектра (стиль witte) ---
-    static constexpr int fftOrder = 11; // Порядок FFT (2048) (1024 при 10)
+    static constexpr int fftOrder = 11;
     static constexpr int fftSize = 1 << fftOrder;
-
-    std::atomic<bool> nextFFTBlockReady{ false }; // Флаг для анализатора
-
-    juce::AbstractFifo abstractFifoInput{ fftSize * 2 }; // Абстрактное FIFO для входного сигнала
-    juce::AudioBuffer<float> audioFifoInput;           // Реальный буфер для входного FIFO
-
-    juce::AbstractFifo abstractFifoOutput{ fftSize * 2 };// Абстрактное FIFO для выходного сигнала
-    juce::AudioBuffer<float> audioFifoOutput;          // Реальный буфер для выходного FIFO
-
-    // Метод для управления копированием в FIFO
+    std::atomic<bool> nextFFTBlockReady{ false };
+    juce::AbstractFifo abstractFifoInput{ fftSize * 2 };
+    juce::AudioBuffer<float> audioFifoInput;
+    juce::AbstractFifo abstractFifoOutput{ fftSize * 2 };
+    juce::AudioBuffer<float> audioFifoOutput;
     void setCopyToFifo(bool _copyToFifo);
     // --------------------------------------------------
 
@@ -95,9 +104,26 @@ private:
         juce::AbstractFifo& absFifo, juce::AudioBuffer<float>& fifo);
 
     float lastSampleRate = 44100.0f;
-    juce::Point<int> editorSize = { 900, 700 };
+    juce::Point<int> editorSize = { 900, 700 }; // <-- Возможно, понадобится увеличить высоту
 
-    void updateParameters();
+    void updateParameters(); // <-- Будем обновлять и параметры реверба здесь
+
+    // --- НОВЫЕ: DSP объекты реверберации для каждой полосы ---
+    juce::dsp::Reverb lowReverb, midReverb, highReverb;
+    juce::dsp::DelayLine<float> lowDelayLine{ 44100 * 2 }, midDelayLine{ 44100 * 2 }, highDelayLine{ 44100 * 2 }; // Макс задержка 2 сек
+    juce::dsp::DryWetMixer<float> lowMixer, midMixer, highMixer;
+    juce::dsp::Reverb::Parameters lowReverbParams, midReverbParams, highReverbParams;
+    // ---------------------------------------------------------
+
+    // --- НОВЫЕ: Переменные для сглаженных значений реверба ---
+    float currentLowWet = 0.0f, currentLowSpace = 0.5f, currentLowDistance = 0.5f, currentLowDelayMs = 0.0f;
+    float currentMidWet = 0.0f, currentMidSpace = 0.5f, currentMidDistance = 0.5f, currentMidDelayMs = 0.0f;
+    float currentHighWet = 0.0f, currentHighSpace = 0.5f, currentHighDistance = 0.5f, currentHighDelayMs = 0.0f;
+    // ----------------------------------------------------------
+
+    // НОВОЕ: Константа и флаг для логики кроссоверов
+    static constexpr float MIN_CROSSOVER_SEPARATION = 10.0f; // Минимальное разделение в Гц (можно настроить)
+    std::atomic<bool> isInternallySettingCrossoverParam{ false }; // Флаг для предотвращения рекурсии
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessor)
 };

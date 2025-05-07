@@ -74,16 +74,32 @@ private:
     RotarySliderWithLabels panSlider;
     juce::Label panLabel;
     PowerButton bypassButton;
+
+    // --- НОВЫЕ: Контролы реверба ---
+    // Используем стандартный juce::Slider, как в SimpleReverb примере,
+    // но можно заменить на RotarySliderWithLabels, если нужно единообразие с Pan
+    juce::Slider wetSlider;
+    juce::Slider spaceSlider;
+    juce::Slider distanceSlider;
+    juce::Slider delaySlider;
+    juce::Label wetLabel, spaceLabel, distanceLabel, delayLabel;
+    // ------------------------------
+    
     // Attachments
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
     using ButtonAttachment = APVTS::ButtonAttachment;
     SliderAttachment lowMidCrossoverAttachment, midHighCrossoverAttachment;
-    std::unique_ptr<SliderAttachment> panAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
+    std::unique_ptr<SliderAttachment> panAttachment;
+    std::unique_ptr<SliderAttachment> wetAttachment;
+    std::unique_ptr<SliderAttachment> spaceAttachment;
+    std::unique_ptr<SliderAttachment> distanceAttachment;
+    std::unique_ptr<SliderAttachment> delayAttachment;
     // Методы
     void updatePanAttachment(int bandIndex);
-    void handleBandAreaClick(int bandIndex); // <-- Объявляем новый метод-обработчик
+    void updateReverbAttachments(int bandIndex); // <<< НОВЫЙ МЕТОД
+    void handleBandAreaClick(int bandIndex);
     void handleAnalyzerToggle(bool shouldBeOn);
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessorEditor)
 };

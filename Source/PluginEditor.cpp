@@ -42,6 +42,35 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     addAndMakeVisible(analyzerOverlay);
     addAndMakeVisible(bandSelectControls);
 
+    // --- НОВОЕ: Настройка слайдеров реверба ---
+    auto setupReverbSlider = [&](juce::Slider& slider, juce::Label& label, const juce::String& labelText, const juce::String& suffix = "") {
+        slider.setSliderStyle(juce::Slider::SliderStyle::RotaryVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow, true, 60, 20);
+        slider.setPopupDisplayEnabled(true, false, this);
+        slider.setTextValueSuffix(suffix);
+        // Установка цветов через LookAndFeel
+        slider.setColour(juce::Slider::rotarySliderFillColourId, ColorScheme::getSliderFillColor());
+        slider.setColour(juce::Slider::rotarySliderOutlineColourId, ColorScheme::getSliderBorderColor());
+        slider.setColour(juce::Slider::thumbColourId, ColorScheme::getSliderThumbColor());
+        slider.setColour(juce::Slider::textBoxTextColourId, ColorScheme::getSecondaryTextColor());
+        slider.setColour(juce::Slider::textBoxOutlineColourId, ColorScheme::getSliderTrackColor().darker(0.2f));
+        slider.setName(labelText); // Имя для отладки/автоматизации
+        addAndMakeVisible(slider);
+
+        label.setText(labelText, juce::dontSendNotification);
+        label.setJustificationType(juce::Justification::centred);
+        label.attachToComponent(&slider, false); // Привязываем метку снизу
+        label.setFont(juce::Font(12.0f));
+        label.setColour(juce::Label::textColourId, ColorScheme::getTextColor());
+        addAndMakeVisible(label);
+    };
+
+    setupReverbSlider(wetSlider, wetLabel, "Wet", " %");
+    setupReverbSlider(spaceSlider, spaceLabel, "Space", " %");
+    setupReverbSlider(distanceSlider, distanceLabel, "Distance", " %");
+    setupReverbSlider(delaySlider, delayLabel, "Pre-Delay", " ms");
+    // ----------------------------------------
+
     controlBar.onAnalyzerToggle = [this](bool state) { handleAnalyzerToggle(state); };
     bool initialAnalyzerState = processorRef.isCopyToFifoEnabled(); // Проверяем начальное состояние процессора
     controlBar.analyzerButton.setToggleState(initialAnalyzerState, juce::dontSendNotification);
@@ -93,11 +122,17 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     panLabel.setColour(juce::Label::textColourId, ColorScheme::getDarkTextColor()); // Èñïîëüçóåì áîëåå òåìíûé öâåò
     addAndMakeVisible(panLabel);
 
-    bandSelectControls.onBandSelected = [this](int bandIndex) { updatePanAttachment(bandIndex); };
-    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); }; // <-- Óñòàíîâëåí êîëáýê
-    updatePanAttachment(0);
+    bandSelectControls.onBandSelected = [this](int bandIndex) {
+        updatePanAttachment(bandIndex);
+        updateReverbAttachments(bandIndex); // <<< ВЫЗЫВАЕМ ОБНОВЛЕНИЕ РЕВЕРБА
+    };
+    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); };
 
-    setSize(900, 700);
+    // --- Инициализация аттачментов для выбранной полосы (0 - Low) ---
+    updatePanAttachment(0);
+    updateReverbAttachments(0); // <<< ИНИЦИАЛИЗИРУЕМ РЕВЕРБ
+
+    setSize(900, 820);
     startTimerHz(30); 
 }
 
@@ -111,58 +146,125 @@ void MBRPAudioProcessorEditor::paint(juce::Graphics& g) {
 }
 
 void MBRPAudioProcessorEditor::resized() {
-    auto bounds = getLocalBounds();
-    int padding = 10;
-    int controlBarHeight = 32; // Óáðàë, åñëè ControlBar íå èñïîëüçóåòñÿ àêòèâíî
+    auto bounds = getLocalBounds(); // Получаем текущие границы всего редактора
 
-    auto topArea = bounds.removeFromTop(controlBarHeight).reduced(padding, 0);
-    controlBar.setBounds(topArea.removeFromLeft(topArea.getWidth() / 2)); // Например, половину ширины
-    bypassButton.setBounds(topArea.removeFromRight(60).reduced(0, 2)); // Кнопка справа, размер по вкусу
+    // --- Константы для отступов и размеров элементов ---
+    const int padding = 10;         // Общий отступ
+    const int smallPadding = 5;     // Маленький отступ для внутренних элементов
+    const int controlBarHeight = 32;
+    const int analyzerHeight = 300;
+    const int labelHeight = 15;         // Высота метки для линейного слайдера
+    const int linearSliderHeight = 40;  // Высота самого линейного слайдера
+    const int bandSelectHeight = 30;    // Высота для компонента BandSelectControls
 
-    int analyzerHeight = 300; // Íåìíîãî óìåíüøèì àíàëèçàòîð
-    auto analyzerArea = bounds.removeFromTop(analyzerHeight).reduced(padding, 0); // Äîáàâèì îòñòóïû ïî áîêàì
+    // Размеры для роторных ручек
+    const int rotaryLabelHeight = 20;   // Высота для метки НАД роторной ручкой
+    const int rotaryKnobWidth = 80;     // Желаемая ширина области для ручки
+    const int rotaryKnobVisualSize = 80; // Фактический диаметр видимой части ручки (чуть меньше области)
+    const int rotaryKnobHeightWithText = rotaryKnobVisualSize + smallPadding + rotaryLabelHeight; // Высота ручки + отступ + высота текстбокса
+
+    // 1. Верхняя секция: ControlBar и BypassButton
+    auto topSection = bounds.removeFromTop(controlBarHeight).reduced(padding, 0);
+    controlBar.setBounds(topSection.removeFromLeft(topSection.getWidth() / 2));
+    bypassButton.setBounds(topSection.removeFromRight(60).reduced(0, smallPadding));
+
+    bounds.removeFromTop(padding);
+
+    // 2. Секция анализатора
+    auto analyzerArea = bounds.removeFromTop(analyzerHeight).reduced(padding, 0);
     analyzer.setBounds(analyzerArea);
     analyzerOverlay.setBounds(analyzerArea);
 
-    // Îáëàñòü ïîä àíàëèçàòîðîì
-    auto controlsArea = bounds.reduced(padding);
-    controlsArea.removeFromTop(padding); // Îòñòóï ñâåðõó
+    bounds.removeFromTop(padding);
 
-    // Ñëàéäåðû êðîññîâåðîâ
-    int labelHeight = 15;
-    int sliderHeight = 40;
-    int crossoverControlHeight = labelHeight + sliderHeight;
-    auto crossoverArea = controlsArea.removeFromTop(crossoverControlHeight);
-    int crossoverWidth = crossoverArea.getWidth() / 2 - padding / 2;
-
-    auto lowMidArea = crossoverArea.removeFromLeft(crossoverWidth);
+    // 3. Секция слайдеров кроссоверов
+    int crossoverControlHeight = labelHeight + linearSliderHeight;
+    auto crossoverSection = bounds.removeFromTop(crossoverControlHeight).reduced(padding, 0);
+    int singleCrossoverWidth = crossoverSection.getWidth() / 2 - padding / 2;
+    auto lowMidArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
     lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
     lowMidCrossoverSlider.setBounds(lowMidArea);
-
-    crossoverArea.removeFromLeft(padding); // Îòñòóï ìåæäó ñëàéäåðàìè
-
-    auto midHighArea = crossoverArea;
+    crossoverSection.removeFromLeft(padding);
+    auto midHighArea = crossoverSection;
     midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
     midHighCrossoverSlider.setBounds(midHighArea);
 
-    controlsArea.removeFromTop(padding); // Îòñòóï
+    bounds.removeFromTop(padding);
 
-    // Êíîïêè âûáîðà ïîëîñû
-    int bandSelectHeight = 30;
-    bandSelectControls.setBounds(controlsArea.removeFromTop(bandSelectHeight).reduced(crossoverWidth / 2, 0)); // Öåíòðèðóåì êíîïêè
+    // 4. Секция кнопок выбора полосы (BandSelectControls)
+    auto bandSelectArea = bounds.removeFromTop(bandSelectHeight);
+    int bandSelectControlsTargetWidth = getWidth() / 2;
+    if (bandSelectControlsTargetWidth < 150) bandSelectControlsTargetWidth = 150;
+    bandSelectControls.setBounds(
+        bandSelectArea.getCentreX() - bandSelectControlsTargetWidth / 2,
+        bandSelectArea.getY(),
+        bandSelectControlsTargetWidth,
+        bandSelectHeight
+    );
 
-    controlsArea.removeFromTop(padding * 2); // Áîëüøèé îòñòóï ïåðåä Pan
+    bounds.removeFromTop(padding * 2); // Увеличенный отступ перед роторными ручками
 
-    // Îáëàñòü Pan
-    auto panArea = controlsArea;
-    int panLabelHeight = 20; // Âûñîòà äëÿ ìåòêè "Pan"
-    // Ðàçìåùàåì ìåòêó "Pan" ÂÍÈÇÓ îáëàñòè panArea
-    panLabel.setBounds(panArea.removeFromBottom(panLabelHeight));
-    // Îñòàâøàÿñÿ îáëàñòü äëÿ ñëàéäåðà, öåíòðèðóåì åãî
-    panSlider.setBounds(panArea.reduced(panArea.getWidth() / 3, padding)); // Äåëàåì ñëàéäåð ïîêðóïíåå è öåíòðèðóåì
+    // 5. Секция роторных ручек (СНАЧАЛА РЕВЕРБ, ПОТОМ PAN ПОД НИМИ)
+    // Область для всех ручек реверба и панорамы
+    auto rotaryMasterArea = bounds.reduced(padding, 0);
+
+    // --- Ручки реверба в ряд ---
+    int numReverbKnobs = 4;
+    // Общая ширина, необходимая для ручек реверба и отступов между ними
+    int totalReverbKnobsWidth = numReverbKnobs * rotaryKnobWidth + (numReverbKnobs - 1) * padding;
+    // Начальная X координата, чтобы отцентрировать группу ручек реверба
+    int reverbKnobsStartX = rotaryMasterArea.getX() + (rotaryMasterArea.getWidth() - totalReverbKnobsWidth) / 2;
+
+    // Область для текущего ряда ручек реверба
+    auto reverbKnobsRowArea = rotaryMasterArea.removeFromTop(rotaryLabelHeight + rotaryKnobHeightWithText);
+    reverbKnobsRowArea.setX(reverbKnobsStartX);
+    reverbKnobsRowArea.setWidth(totalReverbKnobsWidth);
 
 
+    auto placeReverbRotary = [&](juce::Slider& slider, juce::Label& label, juce::Rectangle<int>& currentKnobPlacementArea) {
+        if (currentKnobPlacementArea.getWidth() >= rotaryKnobWidth) {
+            auto singleKnobArea = currentKnobPlacementArea.removeFromLeft(rotaryKnobWidth);
 
+            // Метка НАД слайдером
+            label.setBounds(singleKnobArea.getX() + (rotaryKnobWidth - rotaryKnobVisualSize) / 2, // Центрируем метку над видимой частью ручки
+                singleKnobArea.getY(),
+                rotaryKnobVisualSize, // Ширина метки = диаметру ручки
+                rotaryLabelHeight);
+            // Сам слайдер (ручка + текстовое поле под ней)
+            // Центрируем область слайдера внутри выделенной ему rotaryKnobWidth
+            slider.setBounds(singleKnobArea.getX() + (rotaryKnobWidth - rotaryKnobVisualSize) / 2,
+                singleKnobArea.getY() + rotaryLabelHeight,
+                rotaryKnobVisualSize, // Ширина = диаметру ручки
+                rotaryKnobHeightWithText - rotaryLabelHeight); // Высота = ручка + текстбокс
+
+            currentKnobPlacementArea.removeFromLeft(padding); // Отступ до следующей ручки
+        }
+    };
+
+    placeReverbRotary(wetSlider, wetLabel, reverbKnobsRowArea);
+    placeReverbRotary(spaceSlider, spaceLabel, reverbKnobsRowArea);
+    placeReverbRotary(distanceSlider, distanceLabel, reverbKnobsRowArea);
+    placeReverbRotary(delaySlider, delayLabel, reverbKnobsRowArea);
+
+    // Отступ после ручек реверба
+    rotaryMasterArea.removeFromTop(padding);
+
+    // --- Ручка Pan ПОД ручками реверба и отцентрирована ---
+    if (rotaryMasterArea.getHeight() >= rotaryLabelHeight + rotaryKnobHeightWithText) {
+        auto panKnobArea = rotaryMasterArea.removeFromTop(rotaryLabelHeight + rotaryKnobHeightWithText);
+
+        // Центрируем область для Pan
+        int panAreaX = panKnobArea.getCentreX() - rotaryKnobWidth / 2;
+
+        panLabel.setBounds(panAreaX + (rotaryKnobWidth - rotaryKnobVisualSize) / 2, // Центрируем метку над видимой частью ручки
+            panKnobArea.getY(),
+            rotaryKnobVisualSize,
+            rotaryLabelHeight);
+        panSlider.setBounds(panAreaX + (rotaryKnobWidth - rotaryKnobVisualSize) / 2,
+            panKnobArea.getY() + rotaryLabelHeight,
+            rotaryKnobVisualSize,
+            rotaryKnobHeightWithText - rotaryLabelHeight);
+    }
 }
 
 void MBRPAudioProcessorEditor::handleAnalyzerToggle(bool shouldBeOn)
@@ -249,4 +351,52 @@ void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex)
         // Íàïðÿìóþ âûçûâàòü updatePanAttachment çäåñü íå íóæíî,
         // òàê êàê ýòî ñäåëàåò êîëáýê onBandSelected èç bandSelectControls.
     }
+}
+
+void MBRPAudioProcessorEditor::updateReverbAttachments(int bandIndex) {
+    juce::String wetParamId, spaceParamId, distanceParamId, delayParamId;
+    juce::Colour bandColour;
+
+    switch (bandIndex) {
+    case 0: // Low
+        wetParamId = "lowWet"; spaceParamId = "lowSpace"; distanceParamId = "lowDistance"; delayParamId = "lowDelay";
+        bandColour = ColorScheme::getLowBandColor();
+        break;
+    case 1: // Mid
+        wetParamId = "midWet"; spaceParamId = "midSpace"; distanceParamId = "midDistance"; delayParamId = "midDelay";
+        bandColour = ColorScheme::getMidBandColor();
+        break;
+    case 2: // High
+        wetParamId = "highWet"; spaceParamId = "highSpace"; distanceParamId = "highDistance"; delayParamId = "highDelay";
+        bandColour = ColorScheme::getHighBandColor();
+        break;
+    default:
+        jassertfalse; // Недопустимый индекс
+        return;
+    }
+
+    // Сбрасываем старые аттачменты
+    wetAttachment.reset();
+    spaceAttachment.reset();
+    distanceAttachment.reset();
+    delayAttachment.reset();
+
+    // Создаем новые аттачменты для выбранной полосы
+    wetAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), wetParamId, wetSlider);
+    spaceAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), spaceParamId, spaceSlider);
+    distanceAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), distanceParamId, distanceSlider);
+    delayAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), delayParamId, delaySlider);
+
+    // Обновляем цвета слайдеров в соответствии с полосой
+    auto updateSliderColour = [&](juce::Slider& slider) {
+        slider.setColour(juce::Slider::thumbColourId, bandColour);
+        slider.setColour(juce::Slider::rotarySliderFillColourId, bandColour.withAlpha(0.7f));
+        slider.setColour(juce::Slider::rotarySliderOutlineColourId, bandColour.darker(0.3f));
+        slider.repaint();
+    };
+
+    updateSliderColour(wetSlider);
+    updateSliderColour(spaceSlider);
+    updateSliderColour(distanceSlider);
+    updateSliderColour(delaySlider);
 }
