@@ -45,7 +45,7 @@ namespace MBRP_GUI
         static constexpr float maxFreq = 20000.0f;
         static constexpr float mindB = -100.0f;
         static constexpr float maxdB = 30.0f;
-        const float gainAdjustment = -65.0f;
+        const float gainAdjustment = -45.0f;
 
         static constexpr float smoothingAlpha = 0.2f; 
         static constexpr float peakHoldDecayFactor = 0.957f; 
