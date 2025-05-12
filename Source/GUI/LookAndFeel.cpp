@@ -16,71 +16,104 @@ static float getTextLayoutWidth(const juce::String& text, const juce::Font& font
 // ----------------------------------------------------
 
 void LookAndFeel::drawRotarySlider(juce::Graphics& g,
-    int x,
-    int y,
-    int width,
-    int height,
+    int x, int y, int width, int height,
     float sliderPosProportional,
-    float rotaryStartAngle,
-    float rotaryEndAngle,
+    float rotaryStartAngle, // Например, ~225 градусов или 7*pi/4
+    float rotaryEndAngle,   // Например, ~-45 градусов или -pi/4 (но в диапазоне 0-2pi это будет ~315 или 5*pi/4)
     juce::Slider& slider)
 {
     using namespace juce;
-    using namespace ColorScheme; // Assuming ColorScheme is defined in LookAndFeel.h
 
-    auto bounds = Rectangle<int>(x, y, width, height).toFloat();
-    auto enabled = slider.isEnabled();
+    auto bounds = Rectangle<float>(x, y, width, height);
+    auto center = bounds.getCentre();
+    // Оставляем немного места по краям для указателя/меток
+    float radius = jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f - 5.0f;
+    float trackThickness = radius * 0.10f; // Толщина трека (например, 25% от радиуса)
+    // Уменьшаем радиус на половину толщины трека, чтобы трек рисовался вокруг этого радиуса
+    float arcRadius = radius - trackThickness / 2.0f;
 
-    // Draw the background ellipse
-    g.setColour(enabled ? getSliderFillColor() : Colours::darkgrey);
-    g.fillEllipse(bounds);
+    // --- 1. Рисуем фон всего компонента слайдера (если он отличается от общего фона) ---
+    g.setColour(ColorScheme::getRotarySliderBackBodyColor()); // Пример фона под слайдером
+    g.fillEllipse(bounds); // Если нужен круглый фон для всего компонента
 
-    // Draw the border ellipse
-    g.setColour(enabled ? getSliderBorderColor() : Colours::grey);
-    g.drawEllipse(bounds, 2.f); // Use float thickness
+    // --- 2. Рисуем полный неактивный трек (темный) ---
+    Path backgroundTrack;
+    backgroundTrack.addCentredArc(center.x, center.y,
+        arcRadius, arcRadius,
+        0.0f,             // Начальный угол для Path
+        rotaryStartAngle, // Фактический начальный угол дуги
+        rotaryEndAngle,   // Фактический конечный угол дуги
+        true);            // true = начать новый sub-path
+    g.setColour(ColorScheme::getRotarySliderTrackColor());
+    g.strokePath(backgroundTrack, PathStrokeType(trackThickness, PathStrokeType::curved, PathStrokeType::butt)); // butt для ровных краев
 
-    // Draw the pointer and text label if it's a RotarySliderWithLabels
+    // --- 3. Рисуем дугу активного значения (яркая) ---
+    if (sliderPosProportional > 0.0f)
+    {
+        Path valueArc;
+        float valueAngle = jmap(sliderPosProportional, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
+        valueArc.addCentredArc(center.x, center.y,
+            arcRadius, arcRadius,
+            0.0f,
+            rotaryStartAngle,
+            valueAngle,
+            true);
+        g.setColour(ColorScheme::getRotarySliderValueArcColor());
+        g.strokePath(valueArc, PathStrokeType(trackThickness, PathStrokeType::curved, PathStrokeType::butt));
+    }
+
+    // --- 4. Рисуем центральный круг (маскирует внутреннюю часть дуг) ---
+    float centralCircleRadius = arcRadius - trackThickness / 2.0f - 1.0f; // Чуть меньше внутреннего радиуса дуги
+    if (centralCircleRadius > 0) {
+        g.setColour(ColorScheme::getRotarySliderBodyColor()); // Цвет фона слайдера
+        g.fillEllipse(center.x - centralCircleRadius,
+            center.y - centralCircleRadius,
+            centralCircleRadius * 2.0f,
+            centralCircleRadius * 2.0f);
+    }
+
+    // --- 5. Рисуем указатель (Thumb) - треугольник ---
+    float valueAngleForThumb = jmap(sliderPosProportional, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
+
+    // --- Треугольный указатель (новый вариант) ---
+    Path thumbPath;
+
+    // Радиус для острия треугольника: на внешней границе дуги значения
+    float tipRadius = arcRadius + trackThickness * 0.5f;
+    Point<float> tip = center.getPointOnCircumference(tipRadius, valueAngleForThumb);
+
+    // Радиус для основания треугольника: немного ВНУТРЬ от центральной линии дуги
+    // или даже на внутреннюю границу дуги
+    float baseRadius = arcRadius - trackThickness * 0.3f; // Попробуйте значения от 0.1f до 0.5f * trackThickness
+    // чтобы подобрать "глубину"
+
+// Ширина основания треугольника (определяется углом)
+    float halfBaseAngle = degreesToRadians(12.0f); // Угол для получения нужной ширины основания
+    // Чем больше угол, тем шире основание
+
+    thumbPath.startNewSubPath(tip); // Начинаем с острия
+    thumbPath.lineTo(center.getPointOnCircumference(baseRadius, valueAngleForThumb - halfBaseAngle));
+    thumbPath.lineTo(center.getPointOnCircumference(baseRadius, valueAngleForThumb + halfBaseAngle));
+    thumbPath.closeSubPath(); // Замыкаем треугольник
+
+    g.setColour(ColorScheme::getRotarySliderThumbColor());
+    g.fillPath(thumbPath);
+
+
+    // --- 6. Рисуем текст значения в центре ---
     if (auto* rswl = dynamic_cast<RotarySliderWithLabels*>(&slider))
     {
-        auto center = bounds.getCentre();
-        Path pointerPath;
+        String textToDisplay = rswl->getDisplayString();
+        // Область для текста примерно равна центральному кругу
+        float textRectSide = centralCircleRadius > 0 ? centralCircleRadius * 1.6f : radius * 0.7f;
+        Rectangle<float> textBounds = Rectangle<float>(textRectSide, textRectSide * 0.6f).withCentre(center);
 
-        // Define the pointer shape
-        Rectangle<float> pointerRect;
-        pointerRect.setLeft(center.getX() - 2.f); // Use float
-        pointerRect.setRight(center.getX() + 2.f);
-        pointerRect.setTop(bounds.getY());
-        // Use static_cast for explicit conversion
-        pointerRect.setBottom(juce::jmax(center.getY() - static_cast<float>(rswl->getTextHeight()) * 1.5f,
-            bounds.getY() + 15.f)); // Use float
+        g.setColour(ColorScheme::getRotarySliderTextColor());
+        float fontSize = jmin(radius * 0.35f, textBounds.getHeight() * 0.7f);
+        if (textToDisplay.length() <= 2) fontSize = jmin(radius * 0.45f, textBounds.getHeight() * 0.8f);
 
-        pointerPath.addRoundedRectangle(pointerRect, 2.f);
-
-        // Calculate the angle based on slider position
-        jassert(rotaryStartAngle < rotaryEndAngle);
-        auto sliderAngRad = jmap(sliderPosProportional, 0.f, 1.f, rotaryStartAngle, rotaryEndAngle);
-
-        // Rotate and draw the pointer
-        pointerPath.applyTransform(AffineTransform().rotated(sliderAngRad, center.getX(), center.getY()));
-        g.fillPath(pointerPath);
-
-        // --- Draw the center text label ---
-        // Use FontOptions and TextLayout
-        auto labelFont = juce::Font(juce::FontOptions(static_cast<float>(rswl->getTextHeight())));
-        g.setFont(labelFont);
-        auto text = rswl->getDisplayString();
-        float textWidth = getTextLayoutWidth(text, labelFont);
-        // ----------------------------------
-
-        // Define bounds for the text
-        Rectangle<float> textBounds;
-        textBounds.setSize(textWidth + 4.f, // Use float
-            static_cast<float>(rswl->getTextHeight() + 2)); // Use float
-        textBounds.setCentre(bounds.getCentre());
-
-        // Draw the text
-        g.setColour(enabled ? ColorScheme::getTitleColor() : Colours::lightgrey);
-        g.drawFittedText(text, textBounds.toNearestInt(), juce::Justification::centred, 1);
+        g.setFont(Font(fontSize, Font::bold));
+        g.drawText(textToDisplay, textBounds.toNearestInt(), Justification::centred, false);
     }
 }
 

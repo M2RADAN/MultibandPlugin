@@ -49,7 +49,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     // --- НОВОЕ: Настройка слайдеров реверба ---
     auto setupReverbSliderComponent = [&](RotarySliderWithLabels& slider) {
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); // <<-- УБИРАЕМ ТЕКСТОВОЕ ПОЛЕ
-        slider.setPopupDisplayEnabled(true, false, this);
+        slider.setPopupDisplayEnabled(true, true, this, 500);
         // Цвета для самого слайдера (ручка, заливка) будут установлены в updateReverbAttachments
         // и LookAndFeel::drawRotarySlider
         addAndMakeVisible(slider);
@@ -99,7 +99,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     setupStandardSlider(lowMidCrossoverSlider, lowMidCrossoverLabel, "Low / Mid");
     setupStandardSlider(midHighCrossoverSlider, midHighCrossoverLabel, "Mid / High");
     panSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); // <<-- УБИРАЕМ ТЕКСТОВОЕ ПОЛЕ
-    panSlider.setPopupDisplayEnabled(true, false, this);
+    panSlider.setPopupDisplayEnabled(true, true, this, 500);
     // Цвета будут установлены в updatePanAttachment
     addAndMakeVisible(panSlider);
 
@@ -153,10 +153,10 @@ void MBRPAudioProcessorEditor::resized() {
     const int rotaryKnobVisualSize = 80; // Фактический диаметр видимой части ручки (чуть меньше области)
     const int rotaryKnobHeightWithText = rotaryKnobVisualSize + smallPadding + rotaryLabelHeight; // Высота ручки + отступ + высота текстбокса
 
-    const int rotarySliderInternalTitleHeight = wetSlider.getTextHeight() + 2; // Примерная высота заголовка внутри
-    const int rotarySliderCircleDiameter = 70; // Желаемый диаметр круга
-    const int rotarySliderTotalHeight = rotarySliderInternalTitleHeight + rotarySliderCircleDiameter + smallPadding; // Общая высота для компонента
-    const int rotarySliderWidth = rotarySliderCircleDiameter; // Ширина равна диаметру круга
+    const int rotarySliderDiameter = 100; // Желаемый диаметр видимой части слайдера
+    const int rotaryTitleHeight = 18;    // Высота для заголовка НАД слайдером
+    const int rotarySliderTotalHeight = rotaryTitleHeight + rotarySliderDiameter + smallPadding;
+    const int rotarySliderWidth = rotarySliderDiameter; // Ширина = диаметру
 
     // 1. Верхняя секция: ControlBar и BypassButton
     auto topSection = bounds.removeFromTop(controlBarHeight).reduced(padding, 0);
@@ -214,8 +214,12 @@ void MBRPAudioProcessorEditor::resized() {
 
     auto placeRotary = [&](RotarySliderWithLabels& slider, juce::Rectangle<int>& currentPlacementArea) {
         if (currentPlacementArea.getWidth() >= rotarySliderWidth) {
-            // Выделяем область для всего компонента RotarySliderWithLabels
-            slider.setBounds(currentPlacementArea.removeFromLeft(rotarySliderWidth).withHeight(rotarySliderTotalHeight));
+            auto knobArea = currentPlacementArea.removeFromLeft(rotarySliderWidth);
+            // Центрируем по вертикали, если rotarySliderTotalHeight больше, чем нужно
+            slider.setBounds(knobArea.getX(),
+                knobArea.getY() + (knobArea.getHeight() - rotarySliderTotalHeight) / 2,
+                rotarySliderWidth,
+                rotarySliderTotalHeight);
             currentPlacementArea.removeFromLeft(padding);
         }
         };
@@ -229,30 +233,23 @@ void MBRPAudioProcessorEditor::resized() {
     // --- Ручка Pan ПОД ручками реверба и отцентрирована ---
     // --- Ручка Pan и ее внешняя метка ---
     // Высота для внешней метки Pan
-    const int panExternalLabelHeight = panLabel.getFont().getHeight();
-    // Общая высота для Pan слайдера (с его внутренним заголовком) и внешней метки под ним
-    const int panControlTotalHeight = rotarySliderTotalHeight + smallPadding + panExternalLabelHeight;
+    const int panExternalLabelHeight = 18; // Если используете внешнюю метку
+    const int panControlTotalHeight = rotarySliderTotalHeight + smallPadding + (panSlider.getName().isEmpty() ? panExternalLabelHeight : 0);
 
     if (rotaryMasterArea.getHeight() >= panControlTotalHeight) {
         auto panControlArea = rotaryMasterArea.removeFromTop(panControlTotalHeight);
-
-        // Центрируем область Pan
         int panAreaX = panControlArea.getCentreX() - rotarySliderWidth / 2;
         auto singlePanArea = juce::Rectangle<int>(panAreaX, panControlArea.getY(), rotarySliderWidth, panControlArea.getHeight());
 
-        // Pan слайдер (он сам нарисует свой заголовок "Pan", если он установлен в конструкторе RotarySliderWithLabels)
-        panSlider.setBounds(singlePanArea.removeFromTop(rotarySliderTotalHeight));
-        singlePanArea.removeFromTop(smallPadding);
-        // Внешняя метка "Pan" (возможно, она теперь не нужна, если RotarySliderWithLabels рисует свой заголовок)
-        // Если вы хотите внешнюю метку, раскомментируйте и настройте ее.
-        // panLabel.setBounds(singlePanArea);
-        // Если panSlider.setName("Pan") был установлен, то внешняя panLabel не нужна.
-        // Если вы хотите, чтобы panSlider не имел внутреннего заголовка, а использовал внешнюю panLabel:
-        // 1. В конструкторе panSlider: panSlider(nullptr, "", ""), // Пустой title
-        // 2. Здесь: panLabel.setBounds(singlePanArea.removeFromTop(panExternalLabelHeight));
-        //            panSlider.setBounds(singlePanArea); // Оставшееся место для самого слайдера без внутреннего title
-        // Пока оставим как есть: panSlider будет иметь внутренний title "Pan", а panLabel невидима или удалена.
-        panLabel.setVisible(false); // Скрываем внешнюю panLabel, т.к. RotarySliderWithLabels имеет свой title
+        if (panSlider.getName().isEmpty()) { // Если у panSlider нет своего title, используем внешнюю метку
+            panLabel.setBounds(singlePanArea.removeFromTop(panExternalLabelHeight));
+            singlePanArea.removeFromTop(smallPadding);
+            panLabel.setVisible(true);
+        }
+        else {
+            panLabel.setVisible(false); // Скрываем внешнюю, если RotarySliderWithLabels рисует свой title
+        }
+        panSlider.setBounds(singlePanArea.withHeight(rotarySliderTotalHeight)); // Даем полную высоту
     }
 }
 
@@ -342,6 +339,10 @@ void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex)
     }
 }
 
+static juce::String rangedParamToString(double value, int decimalPlaces = 0)
+{
+    return juce::String(value, decimalPlaces);
+}
 void MBRPAudioProcessorEditor::updateReverbAttachments(int bandIndex) {
     juce::String wetParamId, spaceParamId, distanceParamId, delayParamId;
     juce::Colour bandColour;
@@ -364,24 +365,29 @@ void MBRPAudioProcessorEditor::updateReverbAttachments(int bandIndex) {
         return;
     }
 
-    auto updateSingleReverbSlider = [&](RotarySliderWithLabels& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attachment) {
+    auto updateSingleReverbSlider = [&](RotarySliderWithLabels& slider, const juce::String& paramID, std::unique_ptr<SliderAttachment>& attachment, const juce::String& minLabel, const juce::String& maxLabel) {
+        // ... (код получения параметра и создания аттачмента) ...
         auto* targetParam = processorRef.getAPVTS().getParameter(paramID);
         auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(targetParam);
-        jassert(rangedParam != nullptr);
-        if (!rangedParam) return;
-
-        slider.changeParam(rangedParam); // Обновляем параметр в RotarySliderWithLabels
+        jassert(rangedParam != nullptr); if (!rangedParam) return;
+        slider.changeParam(rangedParam);
         attachment.reset();
         attachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), paramID, slider);
 
+        // --- Добавляем метки Min/Max ---
+        slider.labels.clear();
+        if (!minLabel.isEmpty()) slider.labels.add({ 0.0f, minLabel }); // 0.0 = начало диапазона
+        if (!maxLabel.isEmpty()) slider.labels.add({ 1.0f, maxLabel }); // 1.0 = конец диапазона
+        // -------------------------------
         slider.setColour(juce::Slider::thumbColourId, bandColour);
         slider.setColour(juce::Slider::rotarySliderFillColourId, bandColour.withAlpha(0.7f));
         slider.setColour(juce::Slider::rotarySliderOutlineColourId, bandColour.darker(0.3f));
         slider.repaint();
         };
 
-    updateSingleReverbSlider(wetSlider, wetParamId, wetAttachment);
-    updateSingleReverbSlider(spaceSlider, spaceParamId, spaceAttachment);
-    updateSingleReverbSlider(distanceSlider, distanceParamId, distanceAttachment);
-    updateSingleReverbSlider(delaySlider, delayParamId, delayAttachment);
+    updateSingleReverbSlider(wetSlider, wetParamId, wetAttachment, "0%", "100%");
+    updateSingleReverbSlider(spaceSlider, spaceParamId, spaceAttachment, "0%", "100%");
+    updateSingleReverbSlider(distanceSlider, distanceParamId, distanceAttachment, "0%", "100%");
+    updateSingleReverbSlider(delaySlider, delayParamId, delayAttachment, "0ms", rangedParamToString(delaySlider.getRange().getEnd()) + "ms");
 }
+

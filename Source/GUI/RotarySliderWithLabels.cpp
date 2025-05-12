@@ -19,66 +19,60 @@ static float getTextLayoutWidth(const juce::String& text, const juce::Font& font
 void RotarySliderWithLabels::paint(juce::Graphics& g)
 {
     using namespace juce;
+    auto localBounds = getLocalBounds();
+    auto sliderActualBounds = getSliderBounds(); // Область, где будет рисоваться сам слайдер LookAndFeel'ом
 
-    auto startAng = degreesToRadians(180.f + 45.f); // Start angle for the rotary arc
-    auto endAng = degreesToRadians(180.f - 45.f) + MathConstants<float>::twoPi; // End angle
-    auto range = getRange();
-    auto sliderBounds = getSliderBounds(); // Get bounds for the rotary part
-    auto localBounds = getLocalBounds();   // Get total component bounds
-
-    //// --- Draw Title ---
-    //// Use FontOptions
-    //auto titleFont = juce::Font(juce::FontOptions(static_cast<float>(getTextHeight() + 1), Font::bold)); // Slightly larger/bold
-    //g.setColour(ColorScheme::getTitleColor());
-    //g.setFont(titleFont);
-    //// Draw title centered at the top
-    //g.drawFittedText(getName(),
-    //    localBounds.removeFromTop(getTextHeight() + 4), // Allocate space for title
-    //    Justification::centredBottom, 1);
-    if (getName().isNotEmpty()) // Рисуем, только если имя (заголовок) установлено
+    // --- Рисуем заголовок (title) НАД областью слайдера ---
+    if (getName().isNotEmpty())
     {
-        auto titleFont = juce::Font(juce::FontOptions(static_cast<float>(getTextHeight()), Font::plain)); // Шрифт для заголовка
-        g.setColour(ColorScheme::getTextColor()); // Используем основной цвет текста
-        // Область для заголовка - верхняя часть localBounds
-        // Высота getTextHeight() + небольшой отступ снизу (например, 2 пикселя)
-        g.drawFittedText(getName(),
-            localBounds.removeFromTop(getTextHeight() + 2).reduced(2, 0), // Уменьшаем по горизонтали, чтобы не прилипало к краям
-            Justification::centredBottom, 1);
+        Rectangle<int> titleArea = localBounds.removeFromTop(getTextHeight() + 2);
+        g.setColour(ColorScheme::getRotarySliderLabelColor()); // Цвет для заголовка
+        g.setFont(Font(static_cast<float>(getTextHeight()), Font::plain));
+        g.drawText(getName(), titleArea, Justification::centredBottom, false);
     }
-    // --- Delegate rotary drawing to LookAndFeel ---
+
+    // --- LookAndFeel нарисует сам слайдер (круг, дуги, указатель, центральный текст) ---
+    // Передаем sliderActualBounds в LookAndFeel
+    auto startAng = degreesToRadians(180.f + 45.f); // Стандартные углы для Rotary
+    auto endAng = degreesToRadians(180.f - 45.f) + MathConstants<float>::twoPi;
+    auto range = getRange();
+
     getLookAndFeel().drawRotarySlider(g,
-        sliderBounds.getX(),
-        sliderBounds.getY(),
-        sliderBounds.getWidth(),
-        sliderBounds.getHeight(),
-        // Map value to proportional position [0, 1]
+        sliderActualBounds.getX(),
+        sliderActualBounds.getY(),
+        sliderActualBounds.getWidth(),
+        sliderActualBounds.getHeight(),
         (float)jmap(getValue(), range.getStart(), range.getEnd(), 0.0, 1.0),
         startAng,
         endAng,
         *this);
 
-    // --- Draw Min/Max/Custom Labels around the slider ---
+    // --- Отрисовка внешних меток (L/C/R для Pan) ---
     if (!labels.isEmpty())
     {
-        auto center = sliderBounds.toFloat().getCentre();
-        auto radius = sliderBounds.getWidth() * 0.5f;
-        g.setColour(ColorScheme::getTextColor()); // Используем основной цвет текста
+        auto center = sliderActualBounds.toFloat().getCentre(); // Центр относительно области слайдера
+        // Радиус чуть больше видимого радиуса слайдера из LookAndFeel
+        float visibleRadiusInLnF = jmin(sliderActualBounds.getWidth(), sliderActualBounds.getHeight()) / 2.0f - 4.0f;
+        float labelsRadius = visibleRadiusInLnF + static_cast<float>(getTextHeight()) * 0.8f; // Положение меток L/C/R
+
+        g.setColour(ColorScheme::getRotarySliderLabelColor()); // Цвет для L/C/R
         auto labelFont = juce::Font(juce::FontOptions(static_cast<float>(getTextHeight() - 2)));
         g.setFont(labelFont);
-        // ... (остальная логика отрисовки labels L/C/R) ...
+
         for (const auto& labelPos : labels)
         {
-
-            auto pos = labelPos.pos; // Normalized position (0.0 to 1.0)
-            jassert(0.f <= pos && pos <= 1.f); // Ensure valid position
-            auto ang = jmap(pos, 0.f, 1.f, startAng, endAng);
-            auto labelCenter = center.getPointOnCircumference(radius + static_cast<float>(getTextHeight()) * 1.0f, ang); // Подвинем чуть ближе
+            auto pos = labelPos.pos; // 0.0, 0.5, 1.0
+            auto ang = jmap(pos, 0.0f, 1.0f, startAng, endAng);
+            auto labelCenter = center.getPointOnCircumference(labelsRadius, ang);
 
             auto str = labelPos.label;
             float textWidth = getTextLayoutWidth(str, labelFont);
-            Rectangle<float> textBounds;
-            textBounds.setSize(textWidth + 2.0f, static_cast<float>(getTextHeight())); // Добавим запас по ширине
+            Rectangle<float> textBounds(0, 0, textWidth + 4.0f, static_cast<float>(getTextHeight()));
             textBounds.setCentre(labelCenter);
+            // Убедимся, что метки не выходят за общие границы компонента
+            textBounds.setX(juce::jmax((float)localBounds.getX(), textBounds.getX()));
+            textBounds.setRight(juce::jmin((float)localBounds.getRight(), textBounds.getRight()));
+
             g.drawFittedText(str, textBounds.toNearestInt(), Justification::centred, 1);
         }
     }
@@ -89,13 +83,19 @@ juce::Rectangle<int> RotarySliderWithLabels::getSliderBounds() const
     auto bounds = getLocalBounds();
     // Убираем место для заголовка сверху
     if (getName().isNotEmpty()) {
-        bounds.removeFromTop(getTextHeight() + 2); // Высота заголовка + отступ
+        bounds.removeFromTop(getTextHeight() + 2);
     }
-    // Убираем место для текстового поля снизу, если оно есть и видимо
-    if (getTextBoxPosition() != NoTextBox && isTextBoxEditable()) { // Проверяем, что TextBox реально есть
-        bounds.removeFromBottom(getTextBoxHeight());
+    // Убираем место для внешних меток L/C/R снизу (если они предполагаются)
+    // и для текстового поля, если оно есть
+    int bottomMargin = 0;
+    if (!labels.isEmpty()) bottomMargin = getTextHeight() + 2; // Примерный отступ для L/R
+    if (getTextBoxPosition() != NoTextBox && isTextBoxEditable()) {
+        bottomMargin = juce::jmax(bottomMargin, getTextBoxHeight());
     }
+    bounds.removeFromBottom(bottomMargin);
 
+
+    // Вписываем квадрат в оставшееся пространство
     int size = juce::jmin(bounds.getWidth(), bounds.getHeight());
     return bounds.withSizeKeepingCentre(size, size);
 }

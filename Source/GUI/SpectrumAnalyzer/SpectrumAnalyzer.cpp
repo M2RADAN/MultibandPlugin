@@ -287,8 +287,8 @@ namespace MBRP_GUI
         }
 
         // Рисуем сетку и шкалу ВСЕГДА
-        drawFrequencyGrid(g, graphBounds);
-        drawGainScale(g, graphBounds);
+        /*drawFrequencyGrid(g, graphBounds);*/
+       /* drawGainScale(g, graphBounds);*/
 
         // --- Рисуем спектр и пики ТОЛЬКО если анализатор активен ---
         if (analyzerIsActive.load()) // Проверяем флаг
