@@ -78,10 +78,10 @@ private:
     // --- НОВЫЕ: Контролы реверба ---
     // Используем стандартный juce::Slider, как в SimpleReverb примере,
     // но можно заменить на RotarySliderWithLabels, если нужно единообразие с Pan
-    juce::Slider wetSlider;
-    juce::Slider spaceSlider;
-    juce::Slider distanceSlider;
-    juce::Slider delaySlider;
+    RotarySliderWithLabels wetSlider;      // <-- Изменено
+    RotarySliderWithLabels spaceSlider;    // <-- Изменено
+    RotarySliderWithLabels distanceSlider; // <-- Изменено
+    RotarySliderWithLabels delaySlider;
     juce::Label wetLabel, spaceLabel, distanceLabel, delayLabel;
     // ------------------------------
     
