@@ -84,7 +84,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
     auto muteStrings = StringArray{ "Off", "M" };    // Для Mute
 
     // Диапазон для громкости (например, -24dB до +12dB) ---
-    auto gainRange = NormalisableRange<float>(-24.0f, 12.0f, 0.1f, 1.0f); // Шаг 0.1dB, линейное поведение для слайдера
+    auto gainRange = NormalisableRange<float>(-96.0f, 36.0f, 0.1f, 1.0f); // Шаг 0.1dB, линейное поведение для слайдера
 
     // Функции преобразования значений в текст и обратно
     auto freqValueToText = [](float v, int) { return juce::String(v, 0) + " Hz"; };
