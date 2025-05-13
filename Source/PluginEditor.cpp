@@ -32,6 +32,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     distanceSlider(nullptr, " %", "Distance"),
     delaySlider(nullptr, " ms", "Pre-Delay"),
     panSlider(nullptr, "", "Pan"), // Суффикс не нужен, getDisplayString сам форматирует Pan
+    gainSlider(nullptr, " dB", "Gain"),
     lowMidCrossoverAttachment(processorRef.getAPVTS(), "lowMidCrossover", lowMidCrossoverSlider),
     midCrossoverAttachment(processorRef.getAPVTS(), "midCrossover", midCrossoverSlider), // Аттачмент для нового слайдера
     midHighCrossoverAttachment(processorRef.getAPVTS(), "midHighCrossover", midHighCrossoverSlider)
@@ -54,13 +55,14 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     setupReverbSliderComponent(spaceSlider);
     setupReverbSliderComponent(distanceSlider);
     setupReverbSliderComponent(delaySlider);
+    setupReverbSliderComponent(gainSlider); 
 
     controlBar.onAnalyzerToggle = [this](bool state) { handleAnalyzerToggle(state); };
     bool initialAnalyzerState = processorRef.isCopyToFifoEnabled();
     controlBar.analyzerButton.setToggleState(initialAnalyzerState, juce::dontSendNotification);
     handleAnalyzerToggle(initialAnalyzerState);
 
-    bypassAttachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), "bypass", bypassButton);
+    globalBypassAttachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), "bypass", bypassButton);
     bypassButton.setButtonText("Bypass");
     bypassButton.setTooltip("Bypass the plugin processing");
     bypassButton.setClickingTogglesState(true);
@@ -99,16 +101,36 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     panLabel.setColour(juce::Label::textColourId, ColorScheme::getDarkTextColor());
     addAndMakeVisible(panLabel);
 
-    bandSelectControls.onBandSelected = [this](int bandIndex) { // bandIndex 0..3
+    // Настройка кнопок S/M/B для полос ---
+    auto setupBandToggleButton = [&](juce::TextButton& button, const juce::String& text) {
+        button.setButtonText(text);
+        button.setClickingTogglesState(true); // Важно для аттачментов и логики S/M/B
+        // button.setColour(juce::TextButton::buttonColourId, ColorScheme::getToggleButtonOffColor());
+        // button.setColour(juce::TextButton::buttonOnColourId, ColorScheme::getSliderThumbColor().darker()); // Пример цвета для "включено"
+        // LookAndFeel позаботится о цветах, если он настроен для TextButton
+        addAndMakeVisible(button);
+    };
+    setupBandToggleButton(bandBypassButton, "B"); // B for Bypass
+    setupBandToggleButton(bandSoloButton, "S");   // S for Solo
+    setupBandToggleButton(bandMuteButton, "M");   // M for Mute
+    bandBypassButton.setTooltip("Bypass selected band");
+    bandSoloButton.setTooltip("Solo selected band");
+    bandMuteButton.setTooltip("Mute selected band");
+
+    bandSelectControls.onBandSelected = [this](int bandIndex) {
+        currentSelectedBand = bandIndex; 
         updatePanAttachment(bandIndex);
         updateReverbAttachments(bandIndex);
+        updateBandSpecificControls(bandIndex); 
     };
     analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); }; // bandIndex 0..3
 
-    updatePanAttachment(0);    // Инициализация для Low полосы
-    updateReverbAttachments(0); // Инициализация для Low полосы
+    currentSelectedBand = 0; // Убедимся, что начальное состояние верное
+    updatePanAttachment(currentSelectedBand);
+    updateReverbAttachments(currentSelectedBand);
+    updateBandSpecificControls(currentSelectedBand);  // Инициализация для Low полосы
 
-    setSize(900, 820); // Используем сохраненный размер
+    setSize(900, 1000); // Используем сохраненный размер
     // startTimerHz(30); // Если таймер нужен для чего-то еще (например, анимации в редакторе)
 }
 
@@ -186,6 +208,38 @@ void MBRPAudioProcessorEditor::resized() {
     );
 
     bounds.removeFromTop(padding * 2 + smallPadding);
+
+    // 4,5 СЕКЦИЯ: Контролы для текущей полосы (Gain, S/M/B) ---
+    // Разместим их под кнопками выбора полосы
+    const int bandControlsHeight = 30; // Высота для ряда кнопок S/M/B
+    const int gainSliderAreaHeight = rotarySliderTotalHeight; // Высота для слайдера громкости
+
+    auto bandSpecificControlsArea = bounds.removeFromTop(gainSliderAreaHeight + bandControlsHeight + padding).reduced(padding * 2, 0); //padding*2 для отступов по бокам
+
+    // Сначала слайдер громкости по центру
+    auto gainArea = bandSpecificControlsArea.removeFromTop(gainSliderAreaHeight);
+    gainSlider.setBounds(gainArea.getCentreX() - rotarySliderWidth / 2, gainArea.getY(), rotarySliderWidth, rotarySliderTotalHeight);
+
+    // Затем кнопки S/M/B под ним
+    bandSpecificControlsArea.removeFromTop(smallPadding); // Отступ между слайдером и кнопками
+    auto smbButtonsArea = bandSpecificControlsArea.removeFromTop(bandControlsHeight);
+
+    juce::FlexBox smbFlexBox;
+    smbFlexBox.flexDirection = juce::FlexBox::Direction::row;
+    smbFlexBox.justifyContent = juce::FlexBox::JustifyContent::center; // Центрируем кнопки
+    smbFlexBox.alignItems = juce::FlexBox::AlignItems::center;
+
+    const int smbButtonWidth = 50; // Фиксированная ширина для S/M/B кнопок
+    smbFlexBox.items.add(juce::FlexItem(bandBypassButton).withWidth(smbButtonWidth).withHeight(bandControlsHeight).withMargin(smallPadding));
+    smbFlexBox.items.add(juce::FlexItem(bandSoloButton).withWidth(smbButtonWidth).withHeight(bandControlsHeight).withMargin(smallPadding));
+    smbFlexBox.items.add(juce::FlexItem(bandMuteButton).withWidth(smbButtonWidth).withHeight(bandControlsHeight).withMargin(smallPadding));
+
+    // Область для FlexBox должна быть достаточно широкой, чтобы вместить кнопки
+    int totalSmbWidth = 3 * smbButtonWidth + 4 * smallPadding; // Примерная ширина
+    smbFlexBox.performLayout(smbButtonsArea.withSizeKeepingCentre(totalSmbWidth, bandControlsHeight));
+    // ---------------------------------------------------------------------
+
+    bounds.removeFromTop(padding); // Отступ перед ручками реверба/панорамы
 
     // 5. Секция роторных ручек
     auto rotaryMasterArea = bounds.reduced(padding, 0);
@@ -398,4 +452,69 @@ void MBRPAudioProcessorEditor::updateReverbAttachments(int bandIndex) { // bandI
     updateSingleReverbSlider(spaceSlider, spaceParamId, spaceAttachment, "0%", "100%");
     updateSingleReverbSlider(distanceSlider, distanceParamId, distanceAttachment, "0%", "100%");
     updateSingleReverbSlider(delaySlider, delayParamId, delayAttachment, "0ms", "GET_MAX_FROM_PARAM_MS");
+}
+
+// Обновление контролов громкости, S/M/B для выбранной полосы ---
+void MBRPAudioProcessorEditor::updateBandSpecificControls(int bandIndex)
+{
+    juce::String gainParamID, bypassParamID, soloParamID, muteParamID;
+    juce::Colour bandColour;
+
+    switch (bandIndex)
+    {
+    case 0: // Low
+        gainParamID = "lowGain"; bypassParamID = "lowBypass"; soloParamID = "lowSolo"; muteParamID = "lowMute";
+        bandColour = ColorScheme::getLowBandColor();
+        break;
+    case 1: // Low-Mid
+        gainParamID = "lowMidGain"; bypassParamID = "lowMidBypass"; soloParamID = "lowMidSolo"; muteParamID = "lowMidMute";
+        bandColour = ColorScheme::getLowMidBandColor();
+        break;
+    case 2: // Mid-High
+        gainParamID = "midHighGain"; bypassParamID = "midHighBypass"; soloParamID = "midHighSolo"; muteParamID = "midHighMute";
+        bandColour = ColorScheme::getMidHighBandColor();
+        break;
+    case 3: // High
+        gainParamID = "highGain"; bypassParamID = "highBypass"; soloParamID = "highSolo"; muteParamID = "highMute";
+        bandColour = ColorScheme::getHighBandAltColor();
+        break;
+    default:
+        jassertfalse; return;
+    }
+
+    // Обновление слайдера громкости
+    auto* gainRAP = dynamic_cast<juce::RangedAudioParameter*>(processorRef.getAPVTS().getParameter(gainParamID));
+    jassert(gainRAP != nullptr);
+    if (gainRAP) {
+        gainSlider.changeParam(gainRAP);
+        gainAttachment.reset();
+        gainAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), gainParamID, gainSlider);
+        gainSlider.setColour(juce::Slider::thumbColourId, bandColour);
+        gainSlider.setColour(juce::Slider::rotarySliderFillColourId, bandColour.withAlpha(0.7f));
+        gainSlider.setColour(juce::Slider::rotarySliderOutlineColourId, bandColour.darker(0.3f));
+        gainSlider.labels.clear(); // Очищаем метки L/C/R, если они были от Pan
+        // Можно добавить метки Min/Max для громкости, если нужно
+        gainSlider.labels.add({ 0.0f, rangedParamToString(gainSlider.getRange().getStart(), 0) + "dB" });
+        gainSlider.labels.add({ 1.0f, rangedParamToString(gainSlider.getRange().getEnd(), 0) + "dB" });
+        gainSlider.repaint();
+    }
+
+    // Обновление аттачментов для кнопок S/M/B
+    bandBypassAttachment.reset();
+    bandBypassAttachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), bypassParamID, bandBypassButton);
+
+    bandSoloAttachment.reset();
+    bandSoloAttachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), soloParamID, bandSoloButton);
+
+    bandMuteAttachment.reset();
+    bandMuteAttachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), muteParamID, bandMuteButton);
+
+    // Обновление внешнего вида кнопок (если LookAndFeel не делает это автоматически при смене аттачмента)
+    // Для TextButton, LookAndFeel должен сам обновлять их при изменении toggleState,
+    // но цвет может зависеть от bandColour. Это можно добавить в LookAndFeel::drawToggleButton.
+    // bandBypassButton.setColour(juce::TextButton::buttonOnColourId, bandColour.darker()); 
+    // ... и т.д. или просто repaint()
+    bandBypassButton.repaint();
+    bandSoloButton.repaint();
+    bandMuteButton.repaint();
 }

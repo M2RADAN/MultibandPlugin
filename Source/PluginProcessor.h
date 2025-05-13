@@ -66,6 +66,27 @@ public:
     std::atomic<float>* highDistanceParam = nullptr;
     std::atomic<float>* highDelayParam = nullptr;
 
+    // Параметры громкости, Bypass, Solo, Mute (атомарные указатели) ---
+    std::atomic<float>* lowGainParam = nullptr;
+    std::atomic<float>* lowMidGainParam = nullptr;
+    std::atomic<float>* midHighGainParam = nullptr;
+    std::atomic<float>* highGainParam = nullptr;
+
+    juce::AudioParameterBool* lowBypassParam = nullptr; 
+    juce::AudioParameterBool* lowMidBypassParam = nullptr;
+    juce::AudioParameterBool* midHighBypassParam = nullptr;
+    juce::AudioParameterBool* highBypassParam = nullptr;
+
+    juce::AudioParameterBool* lowSoloParam = nullptr;
+    juce::AudioParameterBool* lowMidSoloParam = nullptr;
+    juce::AudioParameterBool* midHighSoloParam = nullptr;
+    juce::AudioParameterBool* highSoloParam = nullptr;
+
+    juce::AudioParameterBool* lowMuteParam = nullptr;
+    juce::AudioParameterBool* lowMidMuteParam = nullptr;
+    juce::AudioParameterBool* midHighMuteParam = nullptr;
+    juce::AudioParameterBool* highMuteParam = nullptr;
+
     // Listener для параметров
     void parameterChanged(const juce::String& parameterID, float newValue) override;
 
@@ -97,10 +118,10 @@ private:
     Filter leftMidHighLPF, rightMidHighLPF; // LPF для отделения Low+LowMid+MidHigh от High (на основе входа)
 
 
-    std::atomic<float> leftLowGain{ 1.f }, rightLowGain{ 1.f };
-    std::atomic<float> leftLowMidGain{ 1.f }, rightLowMidGain{ 1.f };
-    std::atomic<float> leftMidHighGain{ 1.f }, rightMidHighGain{ 1.f };
-    std::atomic<float> leftHighGain{ 1.f }, rightHighGain{ 1.f };
+    std::atomic<float> leftLowPanGain{ 1.f }, rightLowPanGain{ 1.f };
+    std::atomic<float> leftLowMidPanGain{ 1.f }, rightLowMidPanGain{ 1.f };
+    std::atomic<float> leftMidHighPanGain{ 1.f }, rightMidHighPanGain{ 1.f };
+    std::atomic<float> leftHighPanGain{ 1.f }, rightHighPanGain{ 1.f };
 
     // Буферы для разделения на полосы
     juce::AudioBuffer<float> lowBandBuffer;      // Полоса Low
@@ -137,6 +158,12 @@ private:
 
 
     std::atomic<bool> isInternallySettingCrossoverParam{ false };
+
+    juce::dsp::Gain<float> lowBandGainDSP, lowMidBandGainDSP, midHighBandGainDSP, highBandGainDSP;
+
+    // Состояния Solo/Mute для DSP логики
+    std::atomic<bool> low_isSoloed{ false }, lowMid_isSoloed{ false }, midHigh_isSoloed{ false }, high_isSoloed{ false };
+    std::atomic<bool> anySoloActive{ false }; // Флаг, что хотя бы одна полоса солируется
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessor)
 };

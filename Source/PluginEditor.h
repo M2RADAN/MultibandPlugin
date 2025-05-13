@@ -60,24 +60,35 @@ private:
     RotarySliderWithLabels delaySlider;
     // juce::Label wetLabel, spaceLabel, distanceLabel, delayLabel; // Не используются с RotarySliderWithLabels
 
+    RotarySliderWithLabels gainSlider; 
+    juce::TextButton bandBypassButton, bandSoloButton, bandMuteButton;
+
     // Attachments
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
     using ButtonAttachment = APVTS::ButtonAttachment;
 
     SliderAttachment lowMidCrossoverAttachment, midCrossoverAttachment, midHighCrossoverAttachment;
-    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    std::unique_ptr<ButtonAttachment> globalBypassAttachment; 
     std::unique_ptr<SliderAttachment> panAttachment;
     std::unique_ptr<SliderAttachment> wetAttachment;
     std::unique_ptr<SliderAttachment> spaceAttachment;
     std::unique_ptr<SliderAttachment> distanceAttachment;
     std::unique_ptr<SliderAttachment> delayAttachment;
 
+    std::unique_ptr<SliderAttachment> gainAttachment;
+    std::unique_ptr<ButtonAttachment> bandBypassAttachment;
+    std::unique_ptr<ButtonAttachment> bandSoloAttachment;
+    std::unique_ptr<ButtonAttachment> bandMuteAttachment;
+
     // Методы
     void updatePanAttachment(int bandIndex);     // bandIndex 0..3
     void updateReverbAttachments(int bandIndex); // bandIndex 0..3
+    void updateBandSpecificControls(int bandIndex);
     void handleBandAreaClick(int bandIndex);     // bandIndex 0..3
     void handleAnalyzerToggle(bool shouldBeOn);
+
+    int currentSelectedBand = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessorEditor)
 };

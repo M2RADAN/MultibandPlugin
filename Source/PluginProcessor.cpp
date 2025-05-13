@@ -48,6 +48,27 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
     const ParameterID highDistanceParamID{ "highDistance", 1 };
     const ParameterID highDelayParamID{ "highDelay", 1 };
 
+    // ID параметров для громкости, Bypass, Solo, Mute ---
+    const ParameterID lowGainID{ "lowGain", 1 };
+    const ParameterID lowBypassID{ "lowBypass", 1 };
+    const ParameterID lowSoloID{ "lowSolo", 1 };
+    const ParameterID lowMuteID{ "lowMute", 1 };
+
+    const ParameterID lowMidGainID{ "lowMidGain", 1 };
+    const ParameterID lowMidBypassID{ "lowMidBypass", 1 };
+    const ParameterID lowMidSoloID{ "lowMidSolo", 1 };
+    const ParameterID lowMidMuteID{ "lowMidMute", 1 };
+
+    const ParameterID midHighGainID{ "midHighGain", 1 };
+    const ParameterID midHighBypassID{ "midHighBypass", 1 };
+    const ParameterID midHighSoloID{ "midHighSolo", 1 };
+    const ParameterID midHighMuteID{ "midHighMute", 1 };
+
+    const ParameterID highGainID{ "highGain", 1 };
+    const ParameterID highBypassID{ "highBypass", 1 };
+    const ParameterID highSoloID{ "highSolo", 1 };
+    const ParameterID highMuteID{ "highMute", 1 };
+
     // Диапазоны
     auto lowMidRange = NormalisableRange<float>(20.0f, 2000.0f, 1.0f, 0.25f);    // Low/LowMid: 20Hz - 2kHz
     auto midRange = NormalisableRange<float>(100.0f, 5000.0f, 1.0f, 0.25f);      // LowMid/MidHigh: 100Hz - 5kHz
@@ -58,7 +79,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
     auto spaceRange = NormalisableRange<float>(0.0f, 1.0f, 0.01f);
     auto distanceRange = NormalisableRange<float>(0.0f, 1.0f, 0.01f);
     auto delayRange = NormalisableRange<float>(0.0f, 1000.0f, 1.0f); // 0-1000 ms
-    auto bypassStrings = StringArray{ "Off", "On" };
+    auto bypassStrings = StringArray{ "Off", "On" }; // Для общего Bypass и Bypass полос
+    auto soloStrings = StringArray{ "Off", "S" };    // Для Solo
+    auto muteStrings = StringArray{ "Off", "M" };    // Для Mute
+
+    // Диапазон для громкости (например, -24dB до +12dB) ---
+    auto gainRange = NormalisableRange<float>(-24.0f, 12.0f, 0.1f, 1.0f); // Шаг 0.1dB, линейное поведение для слайдера
 
     // Функции преобразования значений в текст и обратно
     auto freqValueToText = [](float v, int) { return juce::String(v, 0) + " Hz"; };
@@ -82,6 +108,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
     auto delayMsValueToText = [](float v, int) { return String(v, 0) + " ms"; };
     auto percentValueToText = [](float v, int) { return String(v * 100.0f, 0) + " %"; };
     auto percentTextToValue = [](const String& text) { return text.getFloatValue() / 100.0f; };
+
+    // Функция для отображения громкости в dB ---
+    auto gainDbToText = [](float val, int /*maxLen*/) { return String(val, 1) + " dB"; };
+    auto textToGainDb = [](const String& text) { return text.getFloatValue(); }; // Простое преобразование для примера
 
     // Параметры кроссовера
     layout.add(std::make_unique<AudioParameterFloat>(
@@ -115,7 +145,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
         "%L/R", AudioProcessorParameter::genericParameter, panValueToText, panTextToValue
         ));
 
-    // Параметр Bypass
+    // Общий Bypass
     layout.add(std::make_unique<AudioParameterBool>(
         bypassParamID, "Bypass", false,
         juce::AudioParameterBoolAttributes().withLabel("Bypass").withStringFromValueFunction([bypassStrings](bool v, int) { return bypassStrings[v ? 1 : 0]; })
@@ -134,6 +164,38 @@ juce::AudioProcessorValueTreeState::ParameterLayout MBRPAudioProcessor::createPa
     addReverbParams("Low-Mid", lowMidWetParamID, lowMidSpaceParamID, lowMidDistanceParamID, lowMidDelayParamID);
     addReverbParams("Mid-High", midHighWetParamID, midHighSpaceParamID, midHighDistanceParamID, midHighDelayParamID);
     addReverbParams("High", highWetParamID, highSpaceParamID, highDistanceParamID, highDelayParamID);
+
+    // Параметры громкости, Bypass, Solo, Mute для полос ---
+    auto addBandControlParams =
+        [&](const String& prefix, const ParameterID& gainID, const ParameterID& bypassBandID,
+            const ParameterID& soloID, const ParameterID& muteID)
+    {
+        // Громкость
+        layout.add(std::make_unique<AudioParameterFloat>(
+            gainID, prefix + " Gain", gainRange, 0.0f, // 0dB по умолчанию
+            "dB", AudioProcessorParameter::genericParameter, gainDbToText, textToGainDb));
+
+        // Bypass полосы
+        layout.add(std::make_unique<AudioParameterBool>(
+            bypassBandID, prefix + " Bypass", false, // По умолчанию не в bypass
+            AudioParameterBoolAttributes().withLabel("Bypass").withStringFromValueFunction([bypassStrings](bool v, int) { return bypassStrings[v ? 1 : 0]; })
+            .withValueFromStringFunction([bypassStrings](const String& text) { return bypassStrings.indexOf(text) == 1; })));
+        // Solo
+        layout.add(std::make_unique<AudioParameterBool>(
+            soloID, prefix + " Solo", false,
+            AudioParameterBoolAttributes().withLabel("Solo").withStringFromValueFunction([soloStrings](bool v, int) { return soloStrings[v ? 1 : 0]; })
+            .withValueFromStringFunction([soloStrings](const String& text) { return soloStrings.indexOf(text) == 1; })));
+        // Mute
+        layout.add(std::make_unique<AudioParameterBool>(
+            muteID, prefix + " Mute", false,
+            AudioParameterBoolAttributes().withLabel("Mute").withStringFromValueFunction([muteStrings](bool v, int) { return muteStrings[v ? 1 : 0]; })
+            .withValueFromStringFunction([muteStrings](const String& text) { return muteStrings.indexOf(text) == 1; })));
+    };
+
+    addBandControlParams("Low", lowGainID, lowBypassID, lowSoloID, lowMuteID);
+    addBandControlParams("Low-Mid", lowMidGainID, lowMidBypassID, lowMidSoloID, lowMidMuteID);
+    addBandControlParams("Mid-High", midHighGainID, midHighBypassID, midHighSoloID, midHighMuteID);
+    addBandControlParams("High", highGainID, highBypassID, highSoloID, highMuteID);
 
     return layout;
 }
@@ -185,6 +247,31 @@ MBRPAudioProcessor::MBRPAudioProcessor()
     highDistanceParam = apvts->getRawParameterValue("highDistance");
     highDelayParam = apvts->getRawParameterValue("highDelay");
 
+    // Инициализация указателей на параметры громкости, Bypass, Solo, Mute ---
+    lowGainParam = apvts->getRawParameterValue("lowGain");
+    lowBypassParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("lowBypass"));
+    lowSoloParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("lowSolo"));
+    lowMuteParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("lowMute"));
+    jassert(lowGainParam && lowBypassParam && lowSoloParam && lowMuteParam);
+
+    lowMidGainParam = apvts->getRawParameterValue("lowMidGain");
+    lowMidBypassParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("lowMidBypass"));
+    lowMidSoloParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("lowMidSolo"));
+    lowMidMuteParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("lowMidMute"));
+    jassert(lowMidGainParam && lowMidBypassParam && lowMidSoloParam && lowMidMuteParam);
+
+    midHighGainParam = apvts->getRawParameterValue("midHighGain");
+    midHighBypassParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("midHighBypass"));
+    midHighSoloParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("midHighSolo"));
+    midHighMuteParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("midHighMute"));
+    jassert(midHighGainParam && midHighBypassParam && midHighSoloParam && midHighMuteParam);
+
+    highGainParam = apvts->getRawParameterValue("highGain");
+    highBypassParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("highBypass"));
+    highSoloParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("highSolo"));
+    highMuteParam = dynamic_cast<juce::AudioParameterBool*>(apvts->getParameter("highMute"));
+    jassert(highGainParam && highBypassParam && highSoloParam && highMuteParam);
+
     // Добавление слушателей параметров
     apvts->addParameterListener("bypass", this);
     apvts->addParameterListener("lowMidCrossover", this);
@@ -196,7 +283,11 @@ MBRPAudioProcessor::MBRPAudioProcessor()
     apvts->addParameterListener("midHighPan", this);
     apvts->addParameterListener("highPan", this);
 
-    // Слушатели для параметров реверба (можно добавить при необходимости, но updateParameters будет их обновлять)
+    // Слушатели для параметров Solo и Mute (Bypass и Gain обновляются в updateParameters) ---
+    apvts->addParameterListener("lowSolo", this); apvts->addParameterListener("lowMute", this);
+    apvts->addParameterListener("lowMidSolo", this); apvts->addParameterListener("lowMidMute", this);
+    apvts->addParameterListener("midHighSolo", this); apvts->addParameterListener("midHighMute", this);
+    apvts->addParameterListener("highSolo", this); apvts->addParameterListener("highMute", this);
 }
 
 MBRPAudioProcessor::~MBRPAudioProcessor()
@@ -209,6 +300,12 @@ MBRPAudioProcessor::~MBRPAudioProcessor()
     apvts->removeParameterListener("lowMidPan", this);
     apvts->removeParameterListener("midHighPan", this);
     apvts->removeParameterListener("highPan", this);
+
+    // Удаление слушателей для Solo и Mute ---
+    apvts->removeParameterListener("lowSolo", this); apvts->removeParameterListener("lowMute", this);
+    apvts->removeParameterListener("lowMidSolo", this); apvts->removeParameterListener("lowMidMute", this);
+    apvts->removeParameterListener("midHighSolo", this); apvts->removeParameterListener("midHighMute", this);
+    apvts->removeParameterListener("highSolo", this); apvts->removeParameterListener("highMute", this);
 }
 
 
@@ -315,6 +412,12 @@ void MBRPAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     midHighDelayLine.setDelay((currentMidHighDelayMs / 1000.0f) * lastSampleRate); midHighMixer.setWetMixProportion(currentMidHighWet);
     highDelayLine.setDelay((currentHighDelayMs / 1000.0f) * lastSampleRate); highMixer.setWetMixProportion(currentHighWet);
 
+    // Подготовка DSP для громкости ---
+    lowBandGainDSP.prepare(spec); lowBandGainDSP.reset();
+    lowMidBandGainDSP.prepare(spec); lowMidBandGainDSP.reset();
+    midHighBandGainDSP.prepare(spec); midHighBandGainDSP.reset();
+    highBandGainDSP.prepare(spec); highBandGainDSP.reset();
+
     updateParameters(); // Применяем все начальные значения параметров
 }
 
@@ -362,10 +465,10 @@ void MBRPAudioProcessor::updateParameters()
         leftGain.store(std::cos(angle));
         rightGain.store(std::sin(angle));
     };
-    calculatePanGains(lowPanVal, leftLowGain, rightLowGain);
-    calculatePanGains(lowMidPanVal, leftLowMidGain, rightLowMidGain);
-    calculatePanGains(midHighPanVal, leftMidHighGain, rightMidHighGain);
-    calculatePanGains(highPanVal, leftHighGain, rightHighGain);
+    calculatePanGains(lowPanVal, leftLowPanGain, rightLowPanGain);
+    calculatePanGains(lowMidPanVal, leftLowMidPanGain, rightLowMidPanGain);
+    calculatePanGains(midHighPanVal, leftMidHighPanGain, rightMidHighPanGain);
+    calculatePanGains(highPanVal, leftHighPanGain, rightHighPanGain);
 
     // Обновление и сглаживание параметров реверба
     const float smoothingFactor = 0.02f;
@@ -416,6 +519,22 @@ void MBRPAudioProcessor::updateParameters()
     updateReverbDSP(lowMidReverb, lowMidReverbParams, currentLowMidSpace, currentLowMidDistance, lowMidDelayLine, currentLowMidDelayMs, lowMidMixer, currentLowMidWet);
     updateReverbDSP(midHighReverb, midHighReverbParams, currentMidHighSpace, currentMidHighDistance, midHighDelayLine, currentMidHighDelayMs, midHighMixer, currentMidHighWet);
     updateReverbDSP(highReverb, highReverbParams, currentHighSpace, currentHighDistance, highDelayLine, currentHighDelayMs, highMixer, currentHighWet);
+
+    // Обновление DSP громкости ---
+    // Коэффициент сглаживания для громкости может быть другим, если нужно более быстрое реагирование
+    // Здесь используется Decibels::decibelsToGain для преобразования dB в линейный множитель
+    if (lowGainParam) lowBandGainDSP.setGainDecibels(lowGainParam->load());
+    if (lowMidGainParam) lowMidBandGainDSP.setGainDecibels(lowMidGainParam->load());
+    if (midHighGainParam) midHighBandGainDSP.setGainDecibels(midHighGainParam->load());
+    if (highGainParam) highBandGainDSP.setGainDecibels(highGainParam->load());
+    // --------------------------------------
+
+    // Обновление состояний Solo (вызывается из parameterChanged, но здесь для консистентности при запуске)
+    low_isSoloed.store(lowSoloParam ? lowSoloParam->get() : false);
+    lowMid_isSoloed.store(lowMidSoloParam ? lowMidSoloParam->get() : false);
+    midHigh_isSoloed.store(midHighSoloParam ? midHighSoloParam->get() : false);
+    high_isSoloed.store(highSoloParam ? highSoloParam->get() : false);
+    anySoloActive.store(low_isSoloed.load() || lowMid_isSoloed.load() || midHigh_isSoloed.load() || high_isSoloed.load());
 }
 
 void MBRPAudioProcessor::pushNextSampleToFifo(const juce::AudioBuffer<float>& buffer, const int startChannel,
@@ -456,7 +575,7 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     auto totalNumOutputChannels = getTotalNumOutputChannels();
     jassert(totalNumInputChannels >= 1 && totalNumOutputChannels >= 1);
 
-    if (bypassParameter != nullptr && bypassParameter->get())
+    if (bypassParameter != nullptr && bypassParameter->get()) // Общий Bypass плагина
     {
         if (copyToFifo.load())
         {
@@ -475,67 +594,75 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     {
         auto numSamples = buffer.getNumSamples();
 
-        // Оборачиваем буферы в AudioBlock для удобства
         auto inputBlock = juce::dsp::AudioBlock<float>(buffer);
-
         auto lowBandBlock = juce::dsp::AudioBlock<float>(lowBandBuffer).getSubBlock(0, numSamples);
         auto lowMidBandBlock = juce::dsp::AudioBlock<float>(lowMidBandBuffer).getSubBlock(0, numSamples);
         auto midHighBandBlock = juce::dsp::AudioBlock<float>(midHighBandBuffer).getSubBlock(0, numSamples);
         auto highBandBlock = juce::dsp::AudioBlock<float>(highBandBuffer).getSubBlock(0, numSamples);
-
         auto temp1Block = juce::dsp::AudioBlock<float>(tempFilterBuffer1).getSubBlock(0, numSamples);
         auto temp2Block = juce::dsp::AudioBlock<float>(tempFilterBuffer2).getSubBlock(0, numSamples);
 
-        // Разделение на 4 полосы
+        // 1. Разделение на 4 "сырых" полосы
         for (int ch = 0; ch < totalNumInputChannels; ++ch)
         {
+            // ... (код разделения на полосы, как и раньше) ...
             auto inputChannelBlock = inputBlock.getSingleChannelBlock(ch);
-
             auto lowChannelBlock = lowBandBlock.getSingleChannelBlock(ch);
             auto lowMidChannelBlock = lowMidBandBlock.getSingleChannelBlock(ch);
             auto midHighChannelBlock = midHighBandBlock.getSingleChannelBlock(ch);
             auto highChannelBlock = highBandBlock.getSingleChannelBlock(ch);
-
             auto temp1ChannelBlock = temp1Block.getSingleChannelBlock(ch);
             auto temp2ChannelBlock = temp2Block.getSingleChannelBlock(ch);
-
             auto& lpfLowMid = (ch == 0) ? leftLowMidLPF : rightLowMidLPF;
             auto& lpfMid = (ch == 0) ? leftMidLPF : rightMidLPF;
             auto& lpfMidHigh = (ch == 0) ? leftMidHighLPF : rightMidHighLPF;
 
-            juce::dsp::ProcessContextReplacing<float> ctx(inputChannelBlock); // Контекст для операций "на месте"
-
-            // 1. Полоса Low
-            lowChannelBlock.copyFrom(inputChannelBlock); // Копируем вход
+            lowChannelBlock.copyFrom(inputChannelBlock);
             juce::dsp::ProcessContextReplacing<float> lowCtx(lowChannelBlock);
-            lpfLowMid.process(lowCtx); // lowBandBuffer теперь содержит Low = Input * LPF(lowMidCrossover)
+            lpfLowMid.process(lowCtx);
 
-            // 2. Полоса Low-Mid
-            temp1ChannelBlock.copyFrom(inputChannelBlock); // Копируем вход
+            temp1ChannelBlock.copyFrom(inputChannelBlock);
             juce::dsp::ProcessContextReplacing<float> temp1Ctx(temp1ChannelBlock);
-            lpfMid.process(temp1Ctx); // tempFilterBuffer1 теперь содержит Input * LPF(midCrossover)
+            lpfMid.process(temp1Ctx);
 
-            lowMidChannelBlock.copyFrom(temp1ChannelBlock); // Копируем результат LPF(midCrossover)
-            lowMidChannelBlock.subtract(lowChannelBlock);   // lowMidBandBuffer = LPF(midCrossover) - LPF(lowMidCrossover)
+            lowMidChannelBlock.copyFrom(temp1ChannelBlock);
+            lowMidChannelBlock.subtract(lowChannelBlock);
 
-            // 3. Полоса Mid-High
-            temp2ChannelBlock.copyFrom(inputChannelBlock); // Копируем вход
+            temp2ChannelBlock.copyFrom(inputChannelBlock);
             juce::dsp::ProcessContextReplacing<float> temp2Ctx(temp2ChannelBlock);
-            lpfMidHigh.process(temp2Ctx); // tempFilterBuffer2 теперь содержит Input * LPF(midHighCrossover)
+            lpfMidHigh.process(temp2Ctx);
 
-            midHighChannelBlock.copyFrom(temp2ChannelBlock); // Копируем результат LPF(midHighCrossover)
-            midHighChannelBlock.subtract(temp1ChannelBlock);// midHighBandBuffer = LPF(midHighCrossover) - LPF(midCrossover)
+            midHighChannelBlock.copyFrom(temp2ChannelBlock);
+            midHighChannelBlock.subtract(temp1ChannelBlock);
 
-            // 4. Полоса High
-            highChannelBlock.copyFrom(inputChannelBlock);    // Копируем вход
-            highChannelBlock.subtract(temp2ChannelBlock); // highBandBuffer = Input - LPF(midHighCrossover)
+            highChannelBlock.copyFrom(inputChannelBlock);
+            highChannelBlock.subtract(temp2ChannelBlock);
         }
 
-        // Применение реверберации к каждой полосе
-        auto applyReverbToBand = [&](juce::dsp::AudioBlock<float>& bandBlock,
-            juce::dsp::DryWetMixer<float>& mixer,
-            juce::dsp::DelayLine<float>& delayLine,
-            juce::dsp::Reverb& reverb)
+        // 2. Применение SOLO и MUTE к "сырым" полосам
+        auto applySoloMuteToRawBand =
+            [&](juce::dsp::AudioBlock<float>& rawBandBlock,
+                std::atomic<bool>& isSoloed, juce::AudioParameterBool* muteParam)
+        {
+            bool isCurrentlyMuted = (muteParam && muteParam->get());
+            bool shouldBeSilentDueToSolo = anySoloActive.load() && !isSoloed.load();
+            if (isCurrentlyMuted || shouldBeSilentDueToSolo) {
+                rawBandBlock.clear();
+            }
+        };
+        applySoloMuteToRawBand(lowBandBlock, low_isSoloed, lowMuteParam);
+        applySoloMuteToRawBand(lowMidBandBlock, lowMid_isSoloed, lowMidMuteParam);
+        applySoloMuteToRawBand(midHighBandBlock, midHigh_isSoloed, midHighMuteParam);
+        applySoloMuteToRawBand(highBandBlock, high_isSoloed, highMuteParam);
+
+        // 3. Обработка каждой полосы (Реверб, Гейн, Панорама с учетом Bypass)
+
+        // Лямбда для реверберации (без изменений)
+        auto applyReverbToBand =
+            [&](juce::dsp::AudioBlock<float>& bandBlock,
+                juce::dsp::DryWetMixer<float>& mixer,
+                juce::dsp::DelayLine<float>& delayLine,
+                juce::dsp::Reverb& reverb)
         {
             mixer.pushDrySamples(bandBlock);
             juce::dsp::ProcessContextReplacing<float> wetContext(bandBlock);
@@ -544,44 +671,68 @@ void MBRPAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             mixer.mixWetSamples(bandBlock);
         };
 
-        applyReverbToBand(lowBandBlock, lowMixer, lowDelayLine, lowReverb);
-        applyReverbToBand(lowMidBandBlock, lowMidMixer, lowMidDelayLine, lowMidReverb);
-        applyReverbToBand(midHighBandBlock, midHighMixer, midHighDelayLine, midHighReverb);
-        applyReverbToBand(highBandBlock, highMixer, highDelayLine, highReverb);
+        // Массивы для удобного доступа к DSP объектам и параметрам в цикле
+        juce::dsp::AudioBlock<float>* bandBlocks[] = { &lowBandBlock, &lowMidBandBlock, &midHighBandBlock, &highBandBlock };
+        juce::AudioParameterBool* bypassParams[] = { lowBypassParam, lowMidBypassParam, midHighBypassParam, highBypassParam };
+        juce::dsp::Reverb* reverbs[] = { &lowReverb, &lowMidReverb, &midHighReverb, &highReverb };
+        juce::dsp::DryWetMixer<float>* mixers[] = { &lowMixer, &lowMidMixer, &midHighMixer, &highMixer };
+        juce::dsp::DelayLine<float>* delayLines[] = { &lowDelayLine, &lowMidDelayLine, &midHighDelayLine, &highDelayLine };
+        juce::dsp::Gain<float>* gainDSPs[] = { &lowBandGainDSP, &lowMidBandGainDSP, &midHighBandGainDSP, &highBandGainDSP };
 
-        // Суммирование полос и применение панорамы
-        buffer.clear();
-        auto* leftOut = buffer.getWritePointer(0);
-        auto* rightOut = buffer.getWritePointer(1);
+        // Для панорамы нам понадобятся указатели на atomic<float> для левого и правого каналов
+        struct PanGains { std::atomic<float>* left; std::atomic<float>* right; };
+        PanGains panGainAtomics[] = {
+            {&leftLowPanGain, &rightLowPanGain},
+            {&leftLowMidPanGain, &rightLowMidPanGain},
+            {&leftMidHighPanGain, &rightMidHighPanGain},
+            {&leftHighPanGain, &rightHighPanGain}
+        };
 
-        const auto* leftLowIn = lowBandBuffer.getReadPointer(0);
-        const auto* rightLowIn = lowBandBuffer.getReadPointer(1);
-        const auto* leftLowMidIn = lowMidBandBuffer.getReadPointer(0);
-        const auto* rightLowMidIn = lowMidBandBuffer.getReadPointer(1);
-        const auto* leftMidHighIn = midHighBandBuffer.getReadPointer(0);
-        const auto* rightMidHighIn = midHighBandBuffer.getReadPointer(1);
-        const auto* leftHighIn = highBandBuffer.getReadPointer(0);
-        const auto* rightHighIn = highBandBuffer.getReadPointer(1);
 
-        // Загрузка гейнов панорамы
-        float l_lg = leftLowGain.load();     float r_lg = rightLowGain.load();
-        float l_lmg = leftLowMidGain.load();  float r_lmg = rightLowMidGain.load();
-        float l_mhg = leftMidHighGain.load(); float r_mhg = rightMidHighGain.load();
-        float l_hg = leftHighGain.load();    float r_hg = rightHighGain.load();
+        buffer.clear(); // Очищаем выходной буфер перед суммированием
 
-        for (int sample = 0; sample < numSamples; ++sample) {
-            float lowL = leftLowIn[sample] * l_lg;     float lowR = rightLowIn[sample] * r_lg;
-            float lmL = leftLowMidIn[sample] * l_lmg;  float lmR = rightLowMidIn[sample] * r_lmg;
-            float mhL = leftMidHighIn[sample] * l_mhg; float mhR = rightMidHighIn[sample] * r_mhg;
-            float highL = leftHighIn[sample] * l_hg;   float highR = rightHighIn[sample] * r_hg;
+        for (int i = 0; i < 4; ++i) // Итерация по 4 полосам
+        {
+            juce::dsp::AudioBlock<float>& currentBandBlock = *bandBlocks[i];
+            bool isBandBypassed = (bypassParams[i] && bypassParams[i]->get());
 
-            leftOut[sample] = lowL + lmL + mhL + highL;
-            rightOut[sample] = lowR + lmR + mhR + highR;
+            // --- Применение эффектов, если полоса НЕ в байпасе ---
+            if (!isBandBypassed)
+            {
+                // 3.1 Применяем реверберацию
+                applyReverbToBand(currentBandBlock, *mixers[i], *delayLines[i], *reverbs[i]);
+            }
+            // Если в байпасе, реверберация пропускается. Сигнал остается "сухим" (после S/M).
+
+            // 3.2 Применяем Гейн (громкость) в любом случае (к "сухому" или "мокрому" сигналу)
+            juce::dsp::ProcessContextReplacing<float> gainCtx(currentBandBlock);
+            gainDSPs[i]->process(gainCtx);
+
+            // 3.3 Суммирование в выходной буфер с применением панорамы
+            // Панорама применяется только если полоса НЕ в байпасе.
+            // Если в байпасе, то сигнал добавляется "как есть" (центральная панорама, т.е. L=R=сигнал_полосы).
+            const auto* leftBandIn = currentBandBlock.getChannelPointer(0);
+            const auto* rightBandIn = currentBandBlock.getChannelPointer(1);
+            auto* leftOut = buffer.getWritePointer(0);
+            auto* rightOut = buffer.getWritePointer(1);
+
+            float currentLeftPanGain = 1.0f; // По умолчанию для байпаса или если нет панорамы
+            float currentRightPanGain = 1.0f;
+
+            if (!isBandBypassed) {
+                currentLeftPanGain = panGainAtomics[i].left->load();
+                currentRightPanGain = panGainAtomics[i].right->load();
+            }
+
+            for (int sample = 0; sample < numSamples; ++sample)
+            {
+                leftOut[sample] += leftBandIn[sample] * currentLeftPanGain;
+                rightOut[sample] += rightBandIn[sample] * currentRightPanGain;
+            }
         }
     }
-    else
+    else // Обработка для других конфигураций каналов
     {
-        // Обработка для других конфигураций каналов (если нужна)
         for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
             buffer.clear(i, 0, buffer.getNumSamples());
     }
@@ -683,9 +834,34 @@ void MBRPAudioProcessor::parameterChanged(const juce::String& parameterID, float
 
         isInternallySettingCrossoverParam.store(false); // Сбрасываем флаг
 
+
         // updateParameters(); // Вызываем обновление, если что-то изменилось программно
         // (но оно и так будет вызвано в processBlock)
+
+
     }
+
+    // Логика для Solo ---
+    // Если изменился один из параметров Solo
+    if (parameterID.contains("Solo")) {
+        // Обновляем состояния solo для DSP
+        low_isSoloed.store(lowSoloParam->get());
+        lowMid_isSoloed.store(lowMidSoloParam->get());
+        midHigh_isSoloed.store(midHighSoloParam->get());
+        high_isSoloed.store(highSoloParam->get());
+
+        anySoloActive.store(low_isSoloed.load() || lowMid_isSoloed.load() || midHigh_isSoloed.load() || high_isSoloed.load());
+
+        // Если активировали Solo на одной полосе, нужно убедиться, что другие Solo выключены,
+        // если мы хотим эксклюзивное солирование.
+        // Для простоты, текущая реализация позволяет несколько Solo одновременно,
+        // но в GUI это обычно радио-кнопки или логика, отключающая другие.
+        // Если нужно эксклюзивное Solo, здесь можно добавить логику для сброса других solo параметров.
+        // Например, если lowSoloParam стал true, то lowMidSoloParam, midHighSoloParam, highSoloParam -> false.
+        // Это потребует isInternallySettingParameter флага, чтобы избежать рекурсии.
+        // Пока оставляем так: несколько Solo могут быть активны, и anySoloActive это учитывает.
+    }
+
 }
 
 
