@@ -1,12 +1,10 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "../Source/PluginProcessor.h"
-#include "../Source/GUI/LookAndFeel.h"
-
+#include "../Source/PluginProcessor.h" // Для MBRPAudioProcessor::fftSize и т.д.
+#include "../Source/GUI/LookAndFeel.h" // Для ColorScheme
 
 namespace MBRP_GUI
-
 {
 
     class SpectrumAnalyzer final : public juce::Component, juce::Timer
@@ -20,92 +18,66 @@ namespace MBRP_GUI
         void timerCallback() override;
 
         void setAnalyzerActive(bool isActive);
-        bool isAnalyzerActive() const { return isVisible() && this->analyzerIsActive; } // Проверяем и видимость
-
+        // bool isAnalyzerActive() const { return isVisible() && this->analyzerIsActive; } // Старый вариант
+        bool isAnalyzerActive() const { return this->analyzerIsActive.load(); } // Проверяем только флаг
 
     private:
         MBRPAudioProcessor& processor;
-        std::atomic<bool> analyzerIsActive{ true };
+        std::atomic<bool> analyzerIsActive{ true }; // По умолчанию активен
 
-        std::vector<float> displayData;    
-        std::vector<float> peakHoldLevels;   
-        std::atomic<float> peakDbLevel{ mindB }; 
+        std::vector<float> displayData;    // Данные для текущего отображения (сглаженные)
+        std::vector<float> peakHoldLevels;   // Уровни удержания пиков
+        std::atomic<float> peakDbLevel{ mindB }; // Общий пиковый уровень текущего кадра
 
-
+        // Методы отрисовки
         void drawFrequencyGrid(juce::Graphics& g, const juce::Rectangle<float>& bounds);
         void drawGainScale(juce::Graphics& g, const juce::Rectangle<float>& bounds);
         void drawSpectrumAndPeaks(juce::Graphics& g, const juce::Rectangle<float>& bounds);
-        //void drawFrequencyMarkers(juce::Graphics& g, const juce::Rectangle<float>& bounds);
 
+        float frequencyToX(float freq, float width) const; // Преобразование частоты в X-координату
 
-        float frequencyToX(float freq, float width) const;
-
- 
+        // Константы для отображения
         static constexpr float minFreq = 20.0f;
         static constexpr float maxFreq = 20000.0f;
-        static constexpr float mindB = -100.0f;
-        static constexpr float maxdB = 30.0f;
-        const float gainAdjustment = -65.0f;
+        static constexpr float mindB = -100.0f; // Минимальный уровень dB для отображения
+        static constexpr float maxdB = 24.0f;  // Максимальный уровень dB для отображения // Изменено с 30 на 24 для соответствия шкале
+        const float gainAdjustment = -40.0f; // Убрал старую подстройку, т.к. теперь это выходной сигнал
 
-        static constexpr float smoothingAlpha = 0.2f; 
-        static constexpr float peakHoldDecayFactor = 0.957f; 
+        // Параметры сглаживания и удержания пиков
+        static constexpr float smoothingAlpha = 0.2f;
+        static constexpr float peakHoldDecayFactor = 0.957f; // Коэффициент затухания пиков
 
+        int resizeDebounceInFrames = 0; // Для задержки пересчета точек после изменения размера
+        int lastWidthForFftPointsRecalc = 0;
 
-        //const juce::Colour backgroundColour{ juce::Colours::black };
-        //const juce::Colour spectrumFillColour{ juce::Colours::lightblue.withAlpha(0.2f) };
-        //const juce::Colour spectrumLineColour{ juce::Colours::lightblue };
-        //const juce::Colour peakHoldLineColour{ juce::Colours::lightgoldenrodyellow.withAlpha(0.7f) };
-
-        //const juce::Colour overZeroDbLineColour{ juce::Colours::red };
-        //const juce::Colour zeroDbLineColour{ juce::Colours::white.withAlpha(0.5f) };
-        //const juce::Colour gridLineColour{ juce::Colours::dimgrey.withAlpha(0.3f) };
-        //const juce::Colour gridTextColour{ juce::Colours::lightgrey.withAlpha(0.7f) };
-        //const juce::Colour peakTextColour{ juce::Colours::white };
-
-
-        int resizeDebounceInFrames = 0; 
-
-
-        juce::dsp::FFT fftInput{ MBRPAudioProcessor::fftOrder };
-        juce::dsp::FFT fftOutput{ MBRPAudioProcessor::fftOrder };
-
-
+        // --- ИЗМЕНЕНО: DSP для одного потока данных (выходного) ---
+        juce::dsp::FFT forwardFFT{ MBRPAudioProcessor::fftOrder }; // Один объект FFT
         juce::dsp::WindowingFunction<float> hannWindow{ static_cast<size_t>(MBRPAudioProcessor::fftSize),
             juce::dsp::WindowingFunction<float>::hann };
+        juce::AudioBuffer<float> fftBuffer{ 1, MBRPAudioProcessor::fftSize * 2 }; // Буфер для данных FFT
+        juce::AudioBuffer<float> avgSpectrumData{ 5, MBRPAudioProcessor::fftSize / 2 }; // Буфер для усреднения магнитуд (5 кадров)
+        int avgSpectrumDataPtr = 1; // Указатель для циклического буфера усреднения
+        // ---------------------------------------------------------
 
+        juce::CriticalSection pathCreationLock; // Для синхронизации доступа к avgSpectrumData
 
-        juce::AudioBuffer<float> fftBufferInput{ 1, MBRPAudioProcessor::fftSize * 2 };
-        juce::AudioBuffer<float> fftBufferOutput{ 1, MBRPAudioProcessor::fftSize * 2 }; 
-
-        juce::AudioBuffer<float> avgInput{ 5, MBRPAudioProcessor::fftSize / 2 };
-        juce::AudioBuffer<float> avgOutput{ 5, MBRPAudioProcessor::fftSize / 2 }; 
-        int avgInputPtr = 1;
-        int avgOutputPtr = 1; 
-
-
-        juce::CriticalSection pathCreationLock;
-
+        // Структура для оптимизации отрисовки на логарифмической шкале
         struct fftPoint
         {
             int firstBinIndex = 0;
             int lastBinIndex = 1;
             int x = 0;
         };
-        int fftPointsSize = 0; 
-        std::vector<fftPoint> fftPoints; 
+        int fftPointsSize = 0;
+        std::vector<fftPoint> fftPoints;
 
+        // Вспомогательные методы
+        static float getFftPointLevel(const float* averagedMagnitudes, const fftPoint& point); // Удалено, т.к. не используется в текущей версии
+        void recalculateFftPoints(); // Пересчитывает fftPoints при изменении размера
+        void drawNextFrame();        // Обрабатывает следующий блок данных из FIFO
 
-        static float getFftPointLevel(const float* averagedMagnitudes, const fftPoint& point);
-
-        void recalculateFftPoints();
-        void drawNextFrame(); 
-
-
-
-
-        static float getTextLayoutWidth(const juce::String& text, const juce::Font& font);
+        static float getTextLayoutWidth(const juce::String& text, const juce::Font& font); // Для расчета ширины текста
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SpectrumAnalyzer)
     };
-
-} 
+}

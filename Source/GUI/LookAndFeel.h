@@ -35,8 +35,17 @@ namespace ColorScheme
     inline juce::Colour getOverZeroDbLineColor() { return colorHelper(juce::Colours::red); }       // Красный для превышения 0 дБ
 
     // --- Цвета кроссоверов (оставляем) ---
-    inline juce::Colour getOrangeBorderColor() { return colorHelper(juce::Colour(255u, 154u, 1u)); } // Low/Mid
-    inline juce::Colour getMidHighCrossoverColor() { return colorHelper(juce::Colours::cyan); }        // Mid/High
+    inline juce::Colour getLowBandColor() { return colorHelper(juce::Colour(255u, 154u, 1u)); }          // Orange (Low)
+    inline juce::Colour getLowMidBandColor() { return colorHelper(juce::Colour(0xFF9ACD32)); }        // YellowGreen (Low-Mid)
+    inline juce::Colour getMidBandColor() { return getLowMidBandColor(); } // Синоним для AnalyzerOverlay, если он ожидает "Mid"
+    inline juce::Colour getMidHighBandColor() { return colorHelper(juce::Colours::lightgreen); }     // LightGreen (Mid-High)
+    inline juce::Colour getHighBandAltColor() { return colorHelper(juce::Colours::cyan); }             // Cyan (High)
+
+    // Для линий кроссовера в AnalyzerOverlay, если нужны отдельные
+    inline juce::Colour getOrangeBorderColor() { return getLowBandColor(); } // Low/LowMid Crossover Line
+    inline juce::Colour getMidCrossoverLineColor() { return getLowMidBandColor(); } // LowMid/MidHigh Crossover Line
+    inline juce::Colour getMidHighCrossoverColor() { return getMidHighBandColor(); } // MidHigh/High Crossover Line (старое имя, но цвет для этой линии)
+
 
     // --- Цвета слайдеров ---
     inline juce::Colour getSliderFillColor() { return colorHelper(juce::Colours::lightgrey); }    // Заливка роторного слайдера
@@ -57,9 +66,9 @@ namespace ColorScheme
     inline juce::Colour getToggleButtonOffBorder() { return colorHelper(juce::Colours::grey); }         // Граница неактивной кнопки
     inline juce::Colour getToggleButtonOffTextColor() { return getTextColor(); }                       // Текст неактивной кнопки (темно-серый)
     // Цвета для активной кнопки будут браться из цветов кроссоверов/полос
-    inline juce::Colour getLowBandColor() { return getOrangeBorderColor(); }                 // Используем цвет Low/Mid кроссовера
-    inline juce::Colour getMidBandColor() { return colorHelper(juce::Colours::lightgreen); } // Зеленый для Mid
-    inline juce::Colour getHighBandColor() { return getMidHighCrossoverColor(); }             // Голубой для High
+  //  inline juce::Colour getLowBandColor() { return getOrangeBorderColor(); }                 // Используем цвет Low/Mid кроссовера
+  //  inline juce::Colour getMidBandColor() { return colorHelper(juce::Colours::lightgreen); } // Зеленый для Mid
+  //  inline juce::Colour getHighBandColor() { return getMidHighCrossoverColor(); }             // Голубой для High
     inline juce::Colour getToggleButtonOnTextColor() { return colorHelper(juce::Colours::white); }       // Текст активной кнопки (белый)
     
     

@@ -197,48 +197,53 @@ void LookAndFeel::drawToggleButton(juce::Graphics& g,
     {
         auto boundsRect = toggleButton.getLocalBounds().reduced(2);
         auto buttonIsOn = toggleButton.getToggleState();
-        const float cornerSize = 4.0f;
+        const float cornerSize = 3.0f;
 
         Colour backgroundColour;
         Colour borderColour;
         Colour textColour;
 
+        juce::String buttonText = toggleButton.getButtonText();
+
         if (buttonIsOn) {
-            // Определяем цвет фона активной кнопки по ее имени (тексту)
-            // Это менее надежно, чем если бы кнопки имели ID или если бы LookAndFeel
-            // имел доступ к контексту, но для 3 кнопок это сработает.
-            if (toggleButton.getButtonText().equalsIgnoreCase("Low")) {
+            if (buttonText.equalsIgnoreCase("Low")) {
                 backgroundColour = ColorScheme::getLowBandColor();
             }
-            else if (toggleButton.getButtonText().equalsIgnoreCase("Mid")) {
-                backgroundColour = ColorScheme::getMidBandColor();
+            else if (buttonText.equalsIgnoreCase("L-Mid")) {
+                backgroundColour = ColorScheme::getLowMidBandColor(); // Новый цвет
             }
-            else if (toggleButton.getButtonText().equalsIgnoreCase("High")) {
-                backgroundColour = ColorScheme::getHighBandColor();
+            else if (buttonText.equalsIgnoreCase("M-High")) {
+                backgroundColour = ColorScheme::getMidHighBandColor(); // Старый Mid
+            }
+            else if (buttonText.equalsIgnoreCase("High")) {
+                backgroundColour = ColorScheme::getHighBandAltColor(); // Старый High
             }
             else {
-                backgroundColour = ColorScheme::getSliderThumbColor(); // Запасной цвет
+                backgroundColour = ColorScheme::getSliderThumbColor(); // Запасной
             }
-            borderColour = backgroundColour.darker(0.2f); // Граница чуть темнее фона
-            textColour = ColorScheme::getToggleButtonOnTextColor(); // Белый текст
+            borderColour = backgroundColour.darker(0.3f);
+            textColour = ColorScheme::getToggleButtonOnTextColor();
         }
         else {
-            backgroundColour = ColorScheme::getToggleButtonOffColor();   // Светло-серый фон
-            borderColour = ColorScheme::getToggleButtonOffBorder(); // Серая граница
-            textColour = ColorScheme::getToggleButtonOffTextColor(); // Темно-серый текст
+            backgroundColour = ColorScheme::getToggleButtonOffColor();
+            borderColour = ColorScheme::getToggleButtonOffBorder();
+            textColour = ColorScheme::getToggleButtonOffTextColor();
         }
+
 
         // Рисуем фон
         g.setColour(backgroundColour);
         g.fillRoundedRectangle(boundsRect.toFloat(), cornerSize);
 
-        // Рисуем границу
         g.setColour(borderColour);
-        g.drawRoundedRectangle(boundsRect.toFloat(), cornerSize, 1.f);
+        g.drawRoundedRectangle(boundsRect.toFloat(), cornerSize, 1.5f); // Чуть толще граница
 
-        // Рисуем текст
         g.setColour(textColour);
-        g.setFont(juce::Font(14.0f)); // Можно сделать шрифт чуть жирнее: Font(14.0f, Font::bold)
-        g.drawFittedText(toggleButton.getButtonText(), boundsRect, Justification::centred, 1);
+        // Подбираем размер шрифта
+        float fontSize = juce::jmin(14.0f, boundsRect.getHeight() * 0.6f);
+        if (buttonText.length() > 4) fontSize *= 0.85f; // Уменьшаем для длинных текстов типа "M-High"
+
+        g.setFont(juce::Font(fontSize, Font::bold));
+        g.drawFittedText(buttonText, boundsRect, Justification::centred, 1);
     }
 }
