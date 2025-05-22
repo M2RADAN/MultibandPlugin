@@ -105,12 +105,12 @@ namespace MBRP_GUI
 
         // Счетчик для задержки скрытия pop-up (в кадрах таймера)
         int popupHideDelayFramesCounter{ 0 };
-        static const int popupHideDelayFrames = 60; // ~1 секунда при 60 Гц таймера, или 2 секунды при 30 Гц
+        static const int popupHideDelayFrames = 10; // ~1 секунда при 60 Гц таймера, или 2 секунды при 30 Гц
         // Если таймер 30Гц, то 30 кадров = 1 сек, 60 кадров = 2 сек.
         // Если таймер 60Гц, то 60 кадров = 1 сек.
         // У нас startTimerHz(30) в конструкторе, так что 30 кадров = 1 сек.
         // Давайте сделаем задержку в 1 секунду (30 кадров)
-        static const int POPUP_HIDE_DELAY_TOTAL_FRAMES = 30;
+        static const int POPUP_HIDE_DELAY_TOTAL_FRAMES = 10;
 
 
         void showGainPopup(const juce::MouseEvent* eventForPosition, float valueDb); // Передаем MouseEvent для позиции
