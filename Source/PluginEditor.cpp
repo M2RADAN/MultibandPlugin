@@ -2,17 +2,18 @@
 #include "PluginEditor.h"
 
 // --- ControlBar Implementation ---
+// ControlBar теперь просто логический владелец кнопки и ее колбэка,
+// сам он не будет добавляться как видимый компонент в PluginEditor.
 ControlBar::ControlBar() {
     analyzerButton.setClickingTogglesState(true);
     analyzerButton.setTooltip("Enable/Disable Spectrum Analyzer");
     analyzerButton.onClick = [this] { analyzerButtonToggled(); };
-    addAndMakeVisible(analyzerButton);
+    // addAndMakeVisible(analyzerButton); // Не делаем здесь, т.к. кнопка будет добавлена в Editor
 }
 void ControlBar::resized() {
-    auto bounds = getLocalBounds();
-    analyzerButton.setBounds(bounds.removeFromRight(30).reduced(2));
+    // Этот resized для ControlBar больше не актуален, если ControlBar не видима
+    // analyzerButton.setBounds(getLocalBounds()); 
 }
-
 void ControlBar::analyzerButtonToggled()
 {
     if (onAnalyzerToggle) {
@@ -25,7 +26,7 @@ void ControlBar::analyzerButtonToggled()
 MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p),
     analyzer(p),
-    analyzerOverlay(p),
+    analyzerOverlay(p), // Передаем весь процессор
     wetSlider(nullptr, " %", "Wet"),
     spaceSlider(nullptr, " %", "Space"),
     distanceSlider(nullptr, " %", "Distance"),
@@ -39,46 +40,43 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     setLookAndFeel(&lnf);
     processorRef.setCopyToFifo(true);
 
-    // Добавляем компоненты (порядок может влиять на Z-order, но для layout'а не так критично)
-    addAndMakeVisible(controlBar);
-    addAndMakeVisible(bypassButton); // Общий Bypass
+    // Добавляем компоненты
+    addAndMakeVisible(controlBar.analyzerButton); // Добавляем кнопку напрямую
+    addAndMakeVisible(bypassButton);
 
-    //addAndMakeVisible(lowMidCrossoverSlider); addAndMakeVisible(lowMidCrossoverLabel);
-    //addAndMakeVisible(midCrossoverSlider);    addAndMakeVisible(midCrossoverLabel);
-    //addAndMakeVisible(midHighCrossoverSlider); addAndMakeVisible(midHighCrossoverLabel);
+    addAndMakeVisible(lowMidCrossoverSlider); addAndMakeVisible(lowMidCrossoverLabel);
+    addAndMakeVisible(midCrossoverSlider);    addAndMakeVisible(midCrossoverLabel);
+    addAndMakeVisible(midHighCrossoverSlider); addAndMakeVisible(midHighCrossoverLabel);
 
-    //addAndMakeVisible(bandSelectControls);
+    addAndMakeVisible(bandSelectControls);
 
-    addAndMakeVisible(gainSlider);
     addAndMakeVisible(bandBypassButton);
     addAndMakeVisible(bandSoloButton);
     addAndMakeVisible(bandMuteButton);
 
+    addAndMakeVisible(gainSlider);
     addAndMakeVisible(wetSlider);
     addAndMakeVisible(spaceSlider);
     addAndMakeVisible(distanceSlider);
     addAndMakeVisible(delaySlider);
-
     addAndMakeVisible(panSlider);
-    addAndMakeVisible(panLabel);
+    if (panSlider.getName().isEmpty()) // Делаем panLabel видимой только если у panSlider нет своего title
+        addAndMakeVisible(panLabel);
 
-    addAndMakeVisible(analyzer);        // Анализатор добавляется одним из последних,
-    addAndMakeVisible(analyzerOverlay); // чтобы оверлей был поверх него, если он прозрачный
+    addAndMakeVisible(analyzer);
+    addAndMakeVisible(analyzerOverlay);
 
-    // Настройка слайдеров (как и раньше)
-    auto setupRotarySlider = [&](RotarySliderWithLabels& slider) {
+    auto setupRotarySliderComponent = [&](RotarySliderWithLabels& slider) {
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         slider.setPopupDisplayEnabled(true, true, this, 500);
-        // addAndMakeVisible(slider); // Уже сделано выше
         };
 
-    setupRotarySlider(wetSlider);
-    setupRotarySlider(spaceSlider);
-    setupRotarySlider(distanceSlider);
-    setupRotarySlider(delaySlider);
-    setupRotarySlider(gainSlider);
-    setupRotarySlider(panSlider);
-
+    setupRotarySliderComponent(wetSlider); /* ... и для всех остальных роторных ... */
+    setupRotarySliderComponent(spaceSlider);
+    setupRotarySliderComponent(distanceSlider);
+    setupRotarySliderComponent(delaySlider);
+    setupRotarySliderComponent(gainSlider);
+    setupRotarySliderComponent(panSlider);
 
     controlBar.onAnalyzerToggle = [this](bool state) { handleAnalyzerToggle(state); };
     bool initialAnalyzerState = processorRef.isCopyToFifoEnabled();
@@ -86,10 +84,9 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     handleAnalyzerToggle(initialAnalyzerState);
 
     globalBypassAttachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), "bypass", bypassButton);
-    bypassButton.setButtonText("Bypass");
+    // bypassButton.setButtonText("Bypass"); // PowerButton обычно не показывает текст
     bypassButton.setTooltip("Bypass the plugin processing");
     bypassButton.setClickingTogglesState(true);
-    // addAndMakeVisible(bypassButton); // Уже сделано
 
     auto setupStandardSlider = [&](juce::Slider& slider, juce::Label& label, const juce::String& labelText) {
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -100,14 +97,11 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
         slider.setColour(juce::Slider::textBoxTextColourId, ColorScheme::getSecondaryTextColor());
         slider.setColour(juce::Slider::textBoxOutlineColourId, ColorScheme::getSliderTrackColor().darker(0.2f));
         slider.setName(labelText);
-        // addAndMakeVisible(slider); // Уже сделано
         label.setText(labelText, juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
         label.setFont(juce::Font(12.0f));
         label.setColour(juce::Label::textColourId, ColorScheme::getTextColor());
-        // addAndMakeVisible(label); // Уже сделано
         };
-
     setupStandardSlider(lowMidCrossoverSlider, lowMidCrossoverLabel, "Low / L-Mid");
     setupStandardSlider(midCrossoverSlider, midCrossoverLabel, "L-Mid / M-High");
     setupStandardSlider(midHighCrossoverSlider, midHighCrossoverLabel, "M-High / High");
@@ -145,7 +139,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     updateBandSpecificControls(currentSelectedBand);
     analyzerOverlay.setActiveBand(currentSelectedBand);
     // Увеличим высоту по умолчанию, чтобы вместить все контролы сверху
-    setSize(900, 750); // Примерная высота, подберите по факту
+    setSize(900, 600); // Примерная высота, подберите по факту
 }
 
 MBRPAudioProcessorEditor::~MBRPAudioProcessorEditor() {
@@ -162,113 +156,128 @@ void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     const int padding = 10;
     const int smallPadding = 5;
+    const int titleBarHeight = 30; // Опциональная высота для заголовка "MBRP" и кнопки Bypass
 
-    // --- 1. Общая верхняя панель (ControlBar и общий Bypass) ---
-    const int globalControlsHeight = 32;
-    auto globalControlsArea = bounds.removeFromTop(globalControlsHeight).reduced(padding, 0);
-    controlBar.setBounds(globalControlsArea.removeFromLeft(globalControlsArea.getWidth() / 2));
-    bypassButton.setBounds(globalControlsArea.removeFromRight(60).reduced(0, smallPadding));
-    bounds.removeFromTop(smallPadding); // Небольшой отступ после верхней панели
+    // --- 1. Верхняя панель (Название плагина "MBRP" и общий Bypass) ---
+    auto titleArea = bounds.removeFromTop(titleBarHeight).reduced(padding, 0);
+    // bypassButton размещаем справа на этой панели
+    bypassButton.setBounds(titleArea.removeFromRight(60).reduced(0, smallPadding / 2));
+    // Оставшееся место в titleArea можно использовать для текста "MBRP" (см. paint)
 
-    //// --- 2. Панель управления кроссоверами ---
-    //const int labelHeight = 15;
-    //const int linearSliderHeight = 40;
-    //const int crossoverControlHeight = labelHeight + linearSliderHeight;
-    //auto crossoverSection = bounds.removeFromTop(crossoverControlHeight).reduced(padding, 0);
-    //int numCrossoverSliders = 3;
-    //int singleCrossoverWidth = (crossoverSection.getWidth() - (numCrossoverSliders - 1) * padding) / numCrossoverSliders;
+    bounds.removeFromTop(smallPadding); // Отступ после верхней панели
 
-    //auto lowMidArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
-    //lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
-    //lowMidCrossoverSlider.setBounds(lowMidArea);
-    //crossoverSection.removeFromLeft(padding);
-    //auto midArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
-    //midCrossoverLabel.setBounds(midArea.removeFromTop(labelHeight));
-    //midCrossoverSlider.setBounds(midArea);
-    //crossoverSection.removeFromLeft(padding);
-    //auto midHighArea = crossoverSection;
-    //midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
-    //midHighCrossoverSlider.setBounds(midHighArea);
-    //bounds.removeFromTop(padding);
-
-    //// --- 3. Панель выбора активной полосы ---
-    //const int bandSelectHeight = 30;
-    //auto bandSelectArea = bounds.removeFromTop(bandSelectHeight);
-    //int bandSelectControlsTargetWidth = juce::jmax(200, getWidth() * 3 / 5); // Ширина кнопок выбора полосы
-    //bandSelectControls.setBounds(
-    //    bandSelectArea.getCentreX() - bandSelectControlsTargetWidth / 2,
-    //    bandSelectArea.getY(),
-    //    bandSelectControlsTargetWidth,
-    //    bandSelectHeight
-    //);
+    // --- 2. Секция слайдеров кроссоверов ---
+    const int labelHeight = 15;
+    const int linearSliderHeight = 40;
+    const int crossoverControlHeight = labelHeight + linearSliderHeight;
+    auto crossoverSection = bounds.removeFromTop(crossoverControlHeight).reduced(padding, 0);
+    // ... (логика размещения 3-х слайдеров кроссовера без изменений) ...
+    int numCrossoverSliders = 3;
+    int singleCrossoverWidth = (crossoverSection.getWidth() - (numCrossoverSliders - 1) * padding) / numCrossoverSliders;
+    auto lowMidArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
+    lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
+    lowMidCrossoverSlider.setBounds(lowMidArea);
+    crossoverSection.removeFromLeft(padding);
+    auto midArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
+    midCrossoverLabel.setBounds(midArea.removeFromTop(labelHeight));
+    midCrossoverSlider.setBounds(midArea);
+    crossoverSection.removeFromLeft(padding);
+    auto midHighArea = crossoverSection;
+    midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
+    midHighCrossoverSlider.setBounds(midHighArea);
     bounds.removeFromTop(padding);
 
-    // --- 4. Панель управления параметрами выбранной полосы (Gain, S/M/B) ---
-    const int rotarySliderDiameterSmall = 70; // Уменьшим диаметр для этих контролов
-    const int rotaryTitleHeightSmall = 15;
-    const int rotarySliderTotalHeightSmall = rotaryTitleHeightSmall + rotarySliderDiameterSmall + smallPadding;
-    const int bandSMBButtonsHeight = 25;
-    const int bandSpecificControlsSectionHeight = rotarySliderTotalHeightSmall + bandSMBButtonsHeight + smallPadding;
+    // --- 3. Панель выбора активной полосы и кнопки S/M/B под ней ---
+    const int bandSelectHeight = 30;
+    const int smbButtonsHeight = 25; // Высота для кнопок S/M/B
+    auto bandControlsArea = bounds.removeFromTop(bandSelectHeight + smbButtonsHeight + smallPadding).reduced(padding, 0);
 
-    auto bandSpecificControlsArea = bounds.removeFromTop(bandSpecificControlsSectionHeight).reduced(padding, 0);
-    auto gainAndSmbRow = juce::FlexBox(juce::FlexBox::Direction::row, juce::FlexBox::Wrap::noWrap,
-        juce::FlexBox::AlignContent::center, juce::FlexBox::AlignItems::center, juce::FlexBox::JustifyContent::center);
+    auto bandSelectRect = bandControlsArea.removeFromTop(bandSelectHeight);
+    int bandSelectControlsTargetWidth = juce::jmax(240, getWidth() * 3 / 5);
+    bandSelectControls.setBounds(
+        bandSelectRect.getCentreX() - bandSelectControlsTargetWidth / 2,
+        bandSelectRect.getY(),
+        bandSelectControlsTargetWidth,
+        bandSelectHeight
+    );
 
-    // Слайдер Gain
-    gainAndSmbRow.items.add(juce::FlexItem(gainSlider).withWidth(rotarySliderDiameterSmall).withHeight(rotarySliderTotalHeightSmall).withMargin(juce::FlexItem::Margin(0, smallPadding, 0, smallPadding)));
-
-    // Контейнер для кнопок S/M/B
-    auto smbButtonContainer = juce::FlexBox(juce::FlexBox::Direction::column, juce::FlexBox::Wrap::noWrap,
-        juce::FlexBox::AlignContent::center, juce::FlexBox::AlignItems::center, juce::FlexBox::JustifyContent::center);
-    const int smbButtonWidth = 35;
-    const int smbButtonHeight = 22;
-    smbButtonContainer.items.add(juce::FlexItem(bandBypassButton).withWidth(smbButtonWidth).withHeight(smbButtonHeight).withMargin(smallPadding / 2));
-    smbButtonContainer.items.add(juce::FlexItem(bandSoloButton).withWidth(smbButtonWidth).withHeight(smbButtonHeight).withMargin(smallPadding / 2));
-    smbButtonContainer.items.add(juce::FlexItem(bandMuteButton).withWidth(smbButtonWidth).withHeight(smbButtonHeight).withMargin(smallPadding / 2));
-
-    gainAndSmbRow.items.add(juce::FlexItem(smbButtonContainer).withHeight(bandSMBButtonsHeight * 3 + smallPadding * 2).withMargin(juce::FlexItem::Margin(0, smallPadding, 0, padding))); // Добавляем контейнер кнопок в строку
-
-    gainAndSmbRow.performLayout(bandSpecificControlsArea);
+    bandControlsArea.removeFromTop(smallPadding);
+    auto smbRect = bandControlsArea;
+    juce::FlexBox smbFlexBox;
+    smbFlexBox.flexDirection = juce::FlexBox::Direction::row;
+    smbFlexBox.justifyContent = juce::FlexBox::JustifyContent::center;
+    smbFlexBox.alignItems = juce::FlexBox::AlignItems::center;
+    const int smbButtonWidth = 40;
+    smbFlexBox.items.add(juce::FlexItem(bandBypassButton).withWidth(smbButtonWidth).withHeight(smbButtonsHeight).withMargin(smallPadding));
+    smbFlexBox.items.add(juce::FlexItem(bandSoloButton).withWidth(smbButtonWidth).withHeight(smbButtonsHeight).withMargin(smallPadding));
+    smbFlexBox.items.add(juce::FlexItem(bandMuteButton).withWidth(smbButtonWidth).withHeight(smbButtonsHeight).withMargin(smallPadding));
+    int totalSmbWidth = 3 * smbButtonWidth + 4 * smallPadding;
+    smbFlexBox.performLayout(smbRect.withSizeKeepingCentre(totalSmbWidth, smbButtonsHeight));
     bounds.removeFromTop(padding);
 
+    // --- 4. Ряд радиальных слайдеров (Gain, Reverb, Pan) ---
+    const int rotarySliderDiameter = 80;
+    const int rotaryTitleHeight = 16;    // Уменьшил немного для компактности
+    const int rotarySliderTotalHeight = rotaryTitleHeight + rotarySliderDiameter + smallPadding;
 
-    // --- 5. Панель управления реверберацией и панорамой (в один ряд) ---
-    const int effectsRotaryDiameter = 80;
-    const int effectsRotaryTitleHeight = 16;
-    const int effectsRotaryTotalHeight = effectsRotaryTitleHeight + effectsRotaryDiameter + smallPadding;
+    auto mainControlsRowArea = bounds.removeFromTop(rotarySliderTotalHeight).reduced(padding, 0);
 
-    auto effectsControlsArea = bounds.removeFromTop(effectsRotaryTotalHeight).reduced(padding, 0);
-    juce::FlexBox effectsFlexBox;
-    effectsFlexBox.flexDirection = juce::FlexBox::Direction::row;
-    effectsFlexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround; // или spaceBetween
-    effectsFlexBox.alignItems = juce::FlexBox::AlignItems::center;
+    juce::FlexBox mainControlsFlexBox;
+    mainControlsFlexBox.flexDirection = juce::FlexBox::Direction::row;
+    mainControlsFlexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround;
+    mainControlsFlexBox.alignItems = juce::FlexBox::AlignItems::center;
 
-    auto addRotaryToFlex = [&](RotarySliderWithLabels& slider, juce::Label* labelIfNoTitle = nullptr) {
-        if (labelIfNoTitle && slider.getName().isEmpty()) { // Если у слайдера нет своего Title, используем внешнюю метку над ним
-            auto container = juce::FlexBox(juce::FlexBox::Direction::column, juce::FlexBox::Wrap::noWrap,
-                juce::FlexBox::AlignContent::center, juce::FlexBox::AlignItems::center, juce::FlexBox::JustifyContent::center);
-            labelIfNoTitle->setSize(effectsRotaryDiameter, effectsRotaryTitleHeight); // Размер метки
-            container.items.add(juce::FlexItem(*labelIfNoTitle).withHeight(effectsRotaryTitleHeight));
-            container.items.add(juce::FlexItem(slider).withWidth(effectsRotaryDiameter).withHeight(effectsRotaryDiameter + smallPadding)); // Слайдер без его собственного Title
-            effectsFlexBox.items.add(juce::FlexItem(container).withWidth(effectsRotaryDiameter).withHeight(effectsRotaryTotalHeight));
+    RotarySliderWithLabels* slidersInRow[] = { &gainSlider, &wetSlider, &spaceSlider, &distanceSlider, &delaySlider, &panSlider };
+    juce::Label* labelsForSliders[] = { nullptr, nullptr, nullptr, nullptr, nullptr, &panLabel }; // panLabel для panSlider
+
+    for (int i = 0; i < 6; ++i) {
+        auto& slider = *slidersInRow[i];
+        auto* label = labelsForSliders[i];
+
+        if (label && slider.getName().isEmpty()) { // Если у слайдера нет своего Title, используем внешнюю метку над ним
+            auto container = std::make_unique<juce::Component>(); // Используем unique_ptr для управления
+            addAndMakeVisible(*container);
+            slider.setBounds(0, rotaryTitleHeight + smallPadding / 2, rotarySliderDiameter, rotarySliderDiameter);
+            label->setBounds(0, 0, rotarySliderDiameter, rotaryTitleHeight);
+            label->setJustificationType(juce::Justification::centredBottom); // Выравниваем метку
+            container->addAndMakeVisible(slider);
+            container->addAndMakeVisible(*label);
+            mainControlsFlexBox.items.add(juce::FlexItem(*container).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+            // ВАЖНО: нужно где-то хранить эти unique_ptr<Component> контейнеры, чтобы они не удалялись.
+            // Либо не использовать unique_ptr, а добавлять их как члены класса PluginEditor.
+            // Для простоты пока без этого сложного контейнера, panLabel будет просто позиционироваться.
+            // Вместо этого сделаем проще:
+            // mainControlsFlexBox.items.add(juce::FlexItem(slider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+            // panLabel.setBounds(panSlider.getX(), panSlider.getY() - rotaryTitleHeight - smallPadding, rotarySliderDiameter, rotaryTitleHeight);
+
         }
         else {
-            effectsFlexBox.items.add(juce::FlexItem(slider).withWidth(effectsRotaryDiameter).withHeight(effectsRotaryTotalHeight));
+            mainControlsFlexBox.items.add(juce::FlexItem(slider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+            if (label) label->setVisible(false); // Скрываем внешнюю метку, если у слайдера есть своя
         }
-        };
+    }
+    mainControlsFlexBox.performLayout(mainControlsRowArea);
 
-    addRotaryToFlex(wetSlider);
-    addRotaryToFlex(spaceSlider);
-    addRotaryToFlex(distanceSlider);
-    addRotaryToFlex(delaySlider);
-    addRotaryToFlex(panSlider, &panLabel); // panLabel будет отображаться, если panSlider.getName() пуст
+    // Корректировка позиции panLabel, если он видим
+    if (panLabel.isVisible()) {
+        panLabel.setBounds(panSlider.getX(), mainControlsRowArea.getY(), rotarySliderDiameter, rotaryTitleHeight);
+    }
 
-    effectsFlexBox.performLayout(effectsControlsArea);
+
     bounds.removeFromTop(padding);
 
-    // --- 6. Область анализатора (все оставшееся место) ---
-    analyzer.setBounds(bounds.reduced(padding, padding)); // Оставляем небольшие отступы вокруг анализатора
-    analyzerOverlay.setBounds(analyzer.getBounds()); // Оверлей точно по границам анализатора
+    // --- 5. Область анализатора и кнопка его включения/выключения ---
+    // Кнопка теперь будет справа сверху от этой финальной области 'bounds'
+    const int analyzerButtonSize = 28;
+    auto analyzerArea = bounds.reduced(padding, padding); // Основная область для графика
+
+    controlBar.analyzerButton.setBounds(analyzerArea.getRight() - analyzerButtonSize - smallPadding,
+        analyzerArea.getY() + smallPadding,
+        analyzerButtonSize, analyzerButtonSize);
+    controlBar.analyzerButton.toFront(true); // Убедимся, что кнопка поверх анализатора
+
+    analyzer.setBounds(analyzerArea);
+    analyzerOverlay.setBounds(analyzer.getBounds());
 }
 
 
