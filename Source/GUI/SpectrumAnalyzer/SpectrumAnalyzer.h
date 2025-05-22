@@ -40,7 +40,7 @@ namespace MBRP_GUI
         static constexpr float minFreq = 20.0f;
         static constexpr float maxFreq = 20000.0f;
         static constexpr float mindB = -100.0f; // Минимальный уровень dB для отображения
-        static constexpr float maxdB = 24.0f;  // Максимальный уровень dB для отображения // Изменено с 30 на 24 для соответствия шкале
+        static constexpr float maxdB = 36.0f;  // Максимальный уровень dB для отображения // Изменено с 30 на 24 для соответствия шкале
         const float gainAdjustment = -40.0f; // Убрал старую подстройку, т.к. теперь это выходной сигнал
 
         // Параметры сглаживания и удержания пиков

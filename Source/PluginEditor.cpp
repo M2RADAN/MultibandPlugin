@@ -43,11 +43,11 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     addAndMakeVisible(controlBar);
     addAndMakeVisible(bypassButton); // Общий Bypass
 
-    addAndMakeVisible(lowMidCrossoverSlider); addAndMakeVisible(lowMidCrossoverLabel);
-    addAndMakeVisible(midCrossoverSlider);    addAndMakeVisible(midCrossoverLabel);
-    addAndMakeVisible(midHighCrossoverSlider); addAndMakeVisible(midHighCrossoverLabel);
+    //addAndMakeVisible(lowMidCrossoverSlider); addAndMakeVisible(lowMidCrossoverLabel);
+    //addAndMakeVisible(midCrossoverSlider);    addAndMakeVisible(midCrossoverLabel);
+    //addAndMakeVisible(midHighCrossoverSlider); addAndMakeVisible(midHighCrossoverLabel);
 
-    addAndMakeVisible(bandSelectControls);
+    //addAndMakeVisible(bandSelectControls);
 
     addAndMakeVisible(gainSlider);
     addAndMakeVisible(bandBypassButton);
@@ -133,6 +133,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     bandSelectControls.onBandSelected = [this](int bandIndex) {
         currentSelectedBand = bandIndex;
         updatePanAttachment(bandIndex);
+        analyzerOverlay.setActiveBand(bandIndex);
         updateReverbAttachments(bandIndex);
         updateBandSpecificControls(bandIndex);
         };
@@ -142,7 +143,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     updatePanAttachment(currentSelectedBand);
     updateReverbAttachments(currentSelectedBand);
     updateBandSpecificControls(currentSelectedBand);
-
+    analyzerOverlay.setActiveBand(currentSelectedBand);
     // Увеличим высоту по умолчанию, чтобы вместить все контролы сверху
     setSize(900, 750); // Примерная высота, подберите по факту
 }
@@ -169,37 +170,37 @@ void MBRPAudioProcessorEditor::resized() {
     bypassButton.setBounds(globalControlsArea.removeFromRight(60).reduced(0, smallPadding));
     bounds.removeFromTop(smallPadding); // Небольшой отступ после верхней панели
 
-    // --- 2. Панель управления кроссоверами ---
-    const int labelHeight = 15;
-    const int linearSliderHeight = 40;
-    const int crossoverControlHeight = labelHeight + linearSliderHeight;
-    auto crossoverSection = bounds.removeFromTop(crossoverControlHeight).reduced(padding, 0);
-    int numCrossoverSliders = 3;
-    int singleCrossoverWidth = (crossoverSection.getWidth() - (numCrossoverSliders - 1) * padding) / numCrossoverSliders;
+    //// --- 2. Панель управления кроссоверами ---
+    //const int labelHeight = 15;
+    //const int linearSliderHeight = 40;
+    //const int crossoverControlHeight = labelHeight + linearSliderHeight;
+    //auto crossoverSection = bounds.removeFromTop(crossoverControlHeight).reduced(padding, 0);
+    //int numCrossoverSliders = 3;
+    //int singleCrossoverWidth = (crossoverSection.getWidth() - (numCrossoverSliders - 1) * padding) / numCrossoverSliders;
 
-    auto lowMidArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
-    lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
-    lowMidCrossoverSlider.setBounds(lowMidArea);
-    crossoverSection.removeFromLeft(padding);
-    auto midArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
-    midCrossoverLabel.setBounds(midArea.removeFromTop(labelHeight));
-    midCrossoverSlider.setBounds(midArea);
-    crossoverSection.removeFromLeft(padding);
-    auto midHighArea = crossoverSection;
-    midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
-    midHighCrossoverSlider.setBounds(midHighArea);
-    bounds.removeFromTop(padding);
+    //auto lowMidArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
+    //lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
+    //lowMidCrossoverSlider.setBounds(lowMidArea);
+    //crossoverSection.removeFromLeft(padding);
+    //auto midArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
+    //midCrossoverLabel.setBounds(midArea.removeFromTop(labelHeight));
+    //midCrossoverSlider.setBounds(midArea);
+    //crossoverSection.removeFromLeft(padding);
+    //auto midHighArea = crossoverSection;
+    //midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
+    //midHighCrossoverSlider.setBounds(midHighArea);
+    //bounds.removeFromTop(padding);
 
-    // --- 3. Панель выбора активной полосы ---
-    const int bandSelectHeight = 30;
-    auto bandSelectArea = bounds.removeFromTop(bandSelectHeight);
-    int bandSelectControlsTargetWidth = juce::jmax(200, getWidth() * 3 / 5); // Ширина кнопок выбора полосы
-    bandSelectControls.setBounds(
-        bandSelectArea.getCentreX() - bandSelectControlsTargetWidth / 2,
-        bandSelectArea.getY(),
-        bandSelectControlsTargetWidth,
-        bandSelectHeight
-    );
+    //// --- 3. Панель выбора активной полосы ---
+    //const int bandSelectHeight = 30;
+    //auto bandSelectArea = bounds.removeFromTop(bandSelectHeight);
+    //int bandSelectControlsTargetWidth = juce::jmax(200, getWidth() * 3 / 5); // Ширина кнопок выбора полосы
+    //bandSelectControls.setBounds(
+    //    bandSelectArea.getCentreX() - bandSelectControlsTargetWidth / 2,
+    //    bandSelectArea.getY(),
+    //    bandSelectControlsTargetWidth,
+    //    bandSelectHeight
+    //);
     bounds.removeFromTop(padding);
 
     // --- 4. Панель управления параметрами выбранной полосы (Gain, S/M/B) ---
@@ -330,6 +331,14 @@ void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex)
     if (buttonToSelect && !buttonToSelect->getToggleState())
     {
         buttonToSelect->setToggleState(true, juce::sendNotificationSync);
+    }
+    else if (buttonToSelect && buttonToSelect->getToggleState()) {
+        // Если кликнули на уже активную кнопку (например, через маркер Gain),
+        // все равно нужно убедиться, что оверлей знает об этом.
+        // Хотя onBandSelected не вызовется второй раз, если состояние не изменилось.
+        // Поэтому, если это был клик по маркеру Gain, analyzerOverlay сам обновит активную полосу.
+        // Если это был клик по области, и кнопка уже активна, то можно и здесь вызвать:
+        analyzerOverlay.setActiveBand(bandIndex); // На всякий случай, если onBandSelected не сработал
     }
 }
 

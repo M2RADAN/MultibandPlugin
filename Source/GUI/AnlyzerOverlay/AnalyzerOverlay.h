@@ -51,18 +51,19 @@ namespace MBRP_GUI
         void mouseMove(const juce::MouseEvent& event) override;
         void mouseExit(const juce::MouseEvent& event) override;
         void mouseDown(const juce::MouseEvent& event) override;
+        void mouseDoubleClick(const juce::MouseEvent& event) override;
         void mouseDrag(const juce::MouseEvent& event) override;
         void mouseUp(const juce::MouseEvent& event) override;
 
         std::function<void(int bandIndex)> onBandAreaClicked;
-
+        void setActiveBand(int bandIndex);
     private:
         // Объявление метода класса
         
 
         void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<float> graphBounds);
         void drawHoverHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds);
-        void drawGainMarkers(juce::Graphics& g, juce::Rectangle<float> graphBounds);
+        void drawGainMarkersAndActiveBandHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds);
 
         float xToFrequency(float x, const juce::Rectangle<float>& graphBounds) const;
         juce::Rectangle<float> getGraphBounds() const;
@@ -78,6 +79,9 @@ namespace MBRP_GUI
         enum class GainDraggingState { None, DraggingLowGain, DraggingLowMidGain, DraggingMidHighGain, DraggingHighGain };
         GainDraggingState currentGainDragState{ GainDraggingState::None };
         std::pair<GainDraggingState, juce::AudioParameterFloat*> getGainInfoAt(const juce::MouseEvent& event, const juce::Rectangle<float>& graphBounds);
+
+        int activeBandIndex{ 0 };
+
         const float dragToleranceX = 8.0f;
         const float dragToleranceY = 10.0f;
         const float highlightRectWidth = 8.0f;
@@ -91,8 +95,28 @@ namespace MBRP_GUI
         static constexpr float minLogFreq = 20.0f;
         static constexpr float maxLogFreq = 20000.0f;
 
-        const float gainMarkerMinDbOnGui = -36.0f;
-        const float gainMarkerMaxDbOnGui = 12.0f;
+        const float gainMarkerMinDbOnGui = -96.0f;
+        const float gainMarkerMaxDbOnGui = 36.0f;
+
+        // --- ЧЛЕНЫ для Pop-up Display 
+        juce::Label gainPopupDisplay;
+        GainDraggingState currentlyHoveredOrDraggedGainState{ GainDraggingState::None };
+        juce::AudioParameterFloat* currentlyHoveredOrDraggedGainParam{ nullptr };
+
+        // Счетчик для задержки скрытия pop-up (в кадрах таймера)
+        int popupHideDelayFramesCounter{ 0 };
+        static const int popupHideDelayFrames = 60; // ~1 секунда при 60 Гц таймера, или 2 секунды при 30 Гц
+        // Если таймер 30Гц, то 30 кадров = 1 сек, 60 кадров = 2 сек.
+        // Если таймер 60Гц, то 60 кадров = 1 сек.
+        // У нас startTimerHz(30) в конструкторе, так что 30 кадров = 1 сек.
+        // Давайте сделаем задержку в 1 секунду (30 кадров)
+        static const int POPUP_HIDE_DELAY_TOTAL_FRAMES = 30;
+
+
+        void showGainPopup(const juce::MouseEvent* eventForPosition, float valueDb); // Передаем MouseEvent для позиции
+        void hideGainPopup();
+        void startPopupHideDelay();
+
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyzerOverlay)
     };

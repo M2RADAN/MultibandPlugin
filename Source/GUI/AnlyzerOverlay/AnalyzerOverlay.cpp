@@ -8,20 +8,42 @@ namespace MBRP_GUI
 {
     // Конструктор
     AnalyzerOverlay::AnalyzerOverlay(MBRPAudioProcessor& p) : // <--- ИЗМЕНЕНО
-        processorRef(p) // <--- ИЗМЕНЕНО: сохраняем ссылку
+        processorRef(p), // <--- ИЗМЕНЕНО: сохраняем ссылку
+        popupHideDelayFramesCounter(0)
     {
         setInterceptsMouseClicks(true, true);
         setPaintingIsUnclipped(true);
         startTimerHz(30);
+        gainPopupDisplay.setColour(juce::Label::backgroundColourId, juce::Colours::darkgrey.withAlpha(0.85f));
+        gainPopupDisplay.setColour(juce::Label::textColourId, juce::Colours::white);
+        gainPopupDisplay.setColour(juce::Label::outlineColourId, juce::Colours::lightgrey);
+        gainPopupDisplay.setBorderSize({ 1, 1, 1, 1 });
+        gainPopupDisplay.setJustificationType(juce::Justification::centred);
+        gainPopupDisplay.setFont(14.0f);
+        addChildComponent(gainPopupDisplay);
+        gainPopupDisplay.setVisible(false);
+
     }
+
+    void AnalyzerOverlay::setActiveBand(int bandIndex)
+    {
+        if (bandIndex >= 0 && bandIndex < 4)
+        {
+            activeBandIndex = bandIndex;
+            repaint(); // Перерисовать, чтобы обновить подсветку
+        }
+    }
+
 
     // Отрисовка
     void AnalyzerOverlay::paint(juce::Graphics& g)
     {
         auto graphBounds = getGraphBounds();
-        drawHoverHighlight(g, graphBounds);
+        // Рисуем подсветку активной полосы Gain ДО линий и маркеров
+        drawGainMarkersAndActiveBandHighlight(g, graphBounds);
+        drawHoverHighlight(g, graphBounds); // Подсветка для перетаскивания кроссоверов
         drawCrossoverLines(g, graphBounds);
-        drawGainMarkers(g, graphBounds); // <--- НОВЫЙ ВЫЗОВ
+        // drawGainMarkers(g, graphBounds); // Теперь это часть drawGainMarkersAndActiveBandHighlight
     }
 
     // Таймер для анимации (пока без изменений, он управляет подсветкой кроссоверов)
@@ -35,6 +57,16 @@ namespace MBRP_GUI
                 currentHighlightAlpha = targetHighlightAlpha;
             }
             needsRepaint = true;
+        }
+
+        if (popupHideDelayFramesCounter > 0)
+        {
+            popupHideDelayFramesCounter--;
+            if (popupHideDelayFramesCounter == 0)
+            {
+                hideGainPopup(); // Скрываем pop-up по истечении задержки
+                // needsRepaint уже будет true, если pop-up был виден
+            }
         }
 
         // Всегда перерисовываем, чтобы линии обновлялись, если параметр изменился извне
@@ -114,37 +146,30 @@ namespace MBRP_GUI
         drawHandle(mhX, mhCol);
     }
 
-    // --- НОВАЯ ФУНКЦИЯ для отрисовки маркеров Gain ---
-    void AnalyzerOverlay::drawGainMarkers(juce::Graphics& g, juce::Rectangle<float> graphBounds)
+    // Переименованная функция, теперь включает подсветку активной полосы
+    void AnalyzerOverlay::drawGainMarkersAndActiveBandHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds)
     {
         using namespace juce;
         auto top = graphBounds.getY();
         auto height = graphBounds.getHeight();
-        auto bottom = graphBounds.getBottom(); // <--- ДОБАВЬТЕ ЭТУ СТРОКУ
+        auto bottom = graphBounds.getBottom();
         auto leftGraphEdge = graphBounds.getX();
         auto rightGraphEdge = graphBounds.getRight();
         auto graphWidth = graphBounds.getWidth();
 
-        // Получаем X-координаты кроссоверов
         float lmFreq = processorRef.lowMidCrossover->get();
         float mFreq = processorRef.midCrossover->get();
         float mhFreq = processorRef.midHighCrossover->get();
 
-        float x0 = leftGraphEdge; // Начало Low полосы
-        float x1 = mapFreqToXLog(lmFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq);
-        float x2 = mapFreqToXLog(mFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq);
-        float x3 = mapFreqToXLog(mhFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq);
-        float x4 = rightGraphEdge; // Конец High полосы
-
-        // Массивы для удобства
-        float bandXStarts[] = { x0, x1, x2, x3 };
-        float bandXEnds[] = { x1, x2, x3, x4 };
-        std::atomic<float>* gainParams[] = {
-            processorRef.lowGainParam,
-            processorRef.lowMidGainParam,
-            processorRef.midHighGainParam,
-            processorRef.highGainParam
+        float x_coords[] = {
+            leftGraphEdge,
+            mapFreqToXLog(lmFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            mapFreqToXLog(mFreq,  leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            mapFreqToXLog(mhFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            rightGraphEdge
         };
+
+        const juce::String gainParamIDs[] = { "lowGain", "lowMidGain", "midHighGain", "highGain" };
         Colour bandColours[] = {
             ColorScheme::getLowBandColor(),
             ColorScheme::getLowMidBandColor(),
@@ -157,29 +182,50 @@ namespace MBRP_GUI
 
         for (int i = 0; i < 4; ++i)
         {
-            if (!gainParams[i]) continue;
+            auto* paramBase = processorRef.getAPVTS().getParameter(gainParamIDs[i]);
+            auto* gainParam = dynamic_cast<juce::AudioParameterFloat*>(paramBase);
+            if (!gainParam) continue;
 
-            float currentGainDb = gainParams[i]->load();
+            float currentGainDb = gainParam->get();
             float yPos = mapGainDbToY(currentGainDb, top, height, gainMarkerMinDbOnGui, gainMarkerMaxDbOnGui);
+            yPos = juce::jlimit(top + markerHeight / 2.0f, bottom - markerHeight / 2.0f, yPos);
 
-            // Ограничиваем yPos границами графика
-            // Здесь была ошибка с использованием 'bottom', если он не был объявлен в этой функции
-            yPos = juce::jlimit(top + markerHeight / 2.0f, bottom - markerHeight / 2.0f, yPos); // Исправлено использование bottom
+            float bandLeftX = x_coords[i];
+            float bandRightX = x_coords[i + 1];
 
-            float bandLeft = bandXStarts[i];
-            float bandRight = bandXEnds[i];
+            // Пропускаем отрисовку, если полоса невидима или нулевой ширины
+            if (bandRightX <= bandLeftX || bandRightX < leftGraphEdge || bandLeftX > rightGraphEdge) continue;
+            bandLeftX = std::max(leftGraphEdge, bandLeftX);
+            bandRightX = std::min(rightGraphEdge, bandRightX);
+            if (bandRightX <= bandLeftX) continue;
 
-            if (bandRight <= bandLeft || bandRight < leftGraphEdge || bandLeft > rightGraphEdge) continue;
+            // --- НОВОЕ: Отрисовка градиентной подсветки для АКТИВНОЙ полосы ---
+            if (i == activeBandIndex)
+            {
+                juce::Colour baseColour = bandColours[i];
+                // Градиент от цвета полосы (внизу) к почти прозрачному (вверху)
+                juce::ColourGradient gradient(baseColour.withAlpha(0.3f), // Цвет у маркера Gain
+                    bandLeftX, yPos,
+                    baseColour.withAlpha(0.0f), // Прозрачный цвет у верхней границы графика
+                    bandLeftX, top,
+                    false);                     // не радиальный
 
-            bandLeft = std::max(leftGraphEdge, bandLeft);
-            bandRight = std::min(rightGraphEdge, bandRight);
-            if (bandRight <= bandLeft) continue;
+                // Можно сделать градиент на всю высоту полосы, если маркер по центру
+                // juce::ColourGradient gradient (baseColour.withAlpha(0.0f), bandLeftX, top,
+                //                                baseColour.withAlpha(0.4f), bandLeftX, bottom, false);
+                // gradient.addColour(0.5, baseColour.withAlpha(0.1f)); // для нелинейности
 
+                g.setGradientFill(gradient);
+                g.fillRect(bandLeftX, top, bandRightX - bandLeftX, height);
+            }
+            // --------------------------------------------------------------
+
+            // Отрисовка самого маркера Gain
             g.setColour(bandColours[i]);
-            juce::Rectangle<float> gainMarkerRect(bandLeft, yPos - markerHeight / 2.0f, bandRight - bandLeft, markerHeight);
+            juce::Rectangle<float> gainMarkerRect(bandLeftX, yPos - markerHeight / 2.0f, bandRightX - bandLeftX, markerHeight);
             g.fillRect(gainMarkerRect);
 
-            float centerX = bandLeft + (bandRight - bandLeft) / 2.0f;
+            float centerX = bandLeftX + (bandRightX - bandLeftX) / 2.0f;
             if (centerX >= leftGraphEdge && centerX <= rightGraphEdge) {
                 g.setColour(bandColours[i].contrasting(0.7f));
                 g.fillEllipse(centerX - markerHandleWidth / 2.0f, yPos - markerHandleWidth / 2.0f, markerHandleWidth, markerHandleWidth);
@@ -289,11 +335,104 @@ namespace MBRP_GUI
         return { AnalyzerOverlay::GainDraggingState::None, nullptr };
     }
 
+    void AnalyzerOverlay::showGainPopup(const juce::MouseEvent* eventForPosition, float valueDb)
+    {
+        popupHideDelayFramesCounter = 0; // Останавливаем задержку на скрытие, если показываем снова
+
+        juce::String text = juce::String(valueDb, 1) + " dB";
+        gainPopupDisplay.setText(text, juce::dontSendNotification);
+
+        int textWidth = gainPopupDisplay.getFont().getStringWidth(text);
+        int popupWidth = textWidth + 20;
+        int popupHeight = 25;
+
+        // Позиционирование
+        if (eventForPosition) // Если передали MouseEvent, позиционируем относительно мыши
+        {
+            auto mousePos = eventForPosition->getPosition();
+            int x = mousePos.x + 15;
+            int y = mousePos.y + 15;
+
+            if (getParentComponent()) { /* ... логика ограничения родительским компонентом ... */ }
+            gainPopupDisplay.setBounds(x, y, popupWidth, popupHeight);
+        }
+        // Если eventForPosition == nullptr, pop-up обновит текст, но не позицию
+        // (можно добавить логику для позиционирования по центру активного маркера, если нужно)
+
+        if (!gainPopupDisplay.isVisible()) {
+            gainPopupDisplay.setVisible(true);
+            // gainPopupDisplay.toFront(true); // Если нужно
+        }
+    }
+
+    void AnalyzerOverlay::hideGainPopup()
+    {
+        if (gainPopupDisplay.isVisible()) {
+            gainPopupDisplay.setVisible(false);
+        }
+        // Сбрасываем состояния, связанные с pop-up, только если он действительно скрывается
+        // и не удерживается из-за перетаскивания.
+        // Это лучше делать в mouseUp или когда курсор уходит от маркера.
+        // currentlyHoveredOrDraggedGainState = GainDraggingState::None;
+        // currentlyHoveredOrDraggedGainParam = nullptr;
+    }
+
+    void AnalyzerOverlay::startPopupHideDelay()
+    {
+        if (gainPopupDisplay.isVisible() && currentGainDragState == GainDraggingState::None) { // Скрываем только если не перетаскиваем
+            popupHideDelayFramesCounter = POPUP_HIDE_DELAY_TOTAL_FRAMES;
+        }
+    }
+
+
+
+    void AnalyzerOverlay::mouseDoubleClick(const juce::MouseEvent& event)
+    {
+        auto graphBounds = getGraphBounds();
+
+        // Проверяем, был ли двойной клик по одному из маркеров Gain
+        auto gainInfo = getGainInfoAt(event, graphBounds);
+        juce::AudioParameterFloat* paramToReset = gainInfo.second;
+
+        if (paramToReset != nullptr) // Если да, сбрасываем параметр
+        {
+            // Значение, к которому хотим сбросить (0.0 dB для Gain)
+            float targetValueDB = 0.0f;
+
+            // Получаем диапазон нормализации параметра
+            auto normalizedRange = paramToReset->getNormalisableRange();
+
+            // Преобразуем целевое значение dB в нормализованное значение (0.0 to 1.0)
+            // Убедимся, что targetValueDB находится в пределах диапазона параметра,
+            // хотя для 0.0dB это обычно так.
+            float normalizedValue = normalizedRange.convertTo0to1(juce::jlimit(normalizedRange.start, normalizedRange.end, targetValueDB));
+
+            // Начинаем изменение жестом, устанавливаем значение и завершаем жест
+            paramToReset->beginChangeGesture();
+            paramToReset->setValueNotifyingHost(normalizedValue);
+            paramToReset->endChangeGesture();
+
+            // repaint(); // Немедленная перерисовка, чтобы увидеть сброшенное значение
+                         // Хотя таймер тоже должен это сделать
+
+            showGainPopup(&event, targetValueDB); // Показываем сброшенное значение
+            startPopupHideDelay();
+            return; // Выходим, так как действие выполнено
+        }
+    }
 
     void AnalyzerOverlay::mouseMove(const juce::MouseEvent& event)
     {
-        if (currentCrossoverDragState != CrossoverDraggingState::None || currentGainDragState != GainDraggingState::None)
-        {
+        if (currentCrossoverDragState != CrossoverDraggingState::None) { // Если перетаскиваем кроссовер
+            startPopupHideDelay(); // Начинаем отсчет до скрытия Gain pop-up
+            // ... остальная логика для курсора кроссовера ...
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            return;
+        }
+
+        if (currentGainDragState != GainDraggingState::None && currentlyHoveredOrDraggedGainParam != nullptr) { // Если перетаскиваем Gain
+            showGainPopup(&event, currentlyHoveredOrDraggedGainParam->get()); // Обновляем pop-up
+            setMouseCursor(juce::MouseCursor::UpDownResizeCursor); // Курсор уже должен быть таким от mouseDown
             return;
         }
 
@@ -301,17 +440,20 @@ namespace MBRP_GUI
         CrossoverHoverState newCrossoverHover = CrossoverHoverState::None;
         auto gainInfo = getGainInfoAt(event, graphBounds);
         GainDraggingState hoveredGainState = gainInfo.first;
-
+        GainDraggingState hoveredGainStateNow = gainInfo.first;
+        juce::AudioParameterFloat* hoveredGainParamNow = gainInfo.second;
         float newTargetAlphaLocal = 0.0f;
         juce::MouseCursor cursor = juce::MouseCursor::NormalCursor;
 
         if (hoveredGainState != GainDraggingState::None) {
             cursor = juce::MouseCursor::UpDownResizeCursor;
             currentCrossoverHoverState = CrossoverHoverState::None;
+            showGainPopup(&event, hoveredGainParamNow->get());
             targetHighlightAlpha = 0.0f;
         }
         // Используем event.getLocalPosition() для contains
         else if (graphBounds.contains(event.getPosition().toFloat())) {
+            startPopupHideDelay();
             float mouseX = static_cast<float>(event.x);
             float lmX = mapFreqToXLog(processorRef.lowMidCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
             float mX = mapFreqToXLog(processorRef.midCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
@@ -347,21 +489,37 @@ namespace MBRP_GUI
 
     void AnalyzerOverlay::mouseDown(const juce::MouseEvent& event)
     {
+        popupHideDelayFramesCounter = 0;
         auto graphBounds = getGraphBounds();
         juce::AudioParameterFloat* paramToChangeFromGain = nullptr;
 
         auto gainInfo = getGainInfoAt(event, graphBounds);
+        GainDraggingState clickedGainState = gainInfo.first;
         currentGainDragState = gainInfo.first;
         paramToChangeFromGain = gainInfo.second;
 
         if (currentGainDragState != GainDraggingState::None && paramToChangeFromGain != nullptr)
         {
+            currentGainDragState = clickedGainState;
             paramToChangeFromGain->beginChangeGesture();
+            showGainPopup(&event, paramToChangeFromGain->get());
             setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
             currentCrossoverHoverState = CrossoverHoverState::None;
             currentCrossoverDragState = CrossoverDraggingState::None;
             targetHighlightAlpha = 0.0f;
             // repaint(); // Не обязательно, таймер обновит
+            int bandIndex = -1;
+            if (clickedGainState == GainDraggingState::DraggingLowGain) bandIndex = 0;
+            else if (clickedGainState == GainDraggingState::DraggingLowMidGain) bandIndex = 1;
+            else if (clickedGainState == GainDraggingState::DraggingMidHighGain) bandIndex = 2;
+            else if (clickedGainState == GainDraggingState::DraggingHighGain) bandIndex = 3;
+
+            if (bandIndex != -1) {
+                setActiveBand(bandIndex); // Обновляем подсветку в оверлее
+                if (onBandAreaClicked) { // Сообщаем редактору, чтобы он обновил BandSelectControls
+                    onBandAreaClicked(bandIndex);
+                }
+            }
             return;
         }
 
@@ -414,6 +572,7 @@ namespace MBRP_GUI
         else {
             currentCrossoverDragState = CrossoverDraggingState::None;
             currentGainDragState = GainDraggingState::None;
+            hideGainPopup();
             targetHighlightAlpha = 0.0f; currentCrossoverHoverState = CrossoverHoverState::None;
         }
     }
@@ -425,6 +584,9 @@ namespace MBRP_GUI
             }
             targetHighlightAlpha = 0.0f;
             currentCrossoverHoverState = CrossoverHoverState::None;
+            startPopupHideDelay(); // Начинаем отсчет до скрытия Gain pop-up
+            currentlyHoveredOrDraggedGainState = GainDraggingState::None; // Сбрасываем состояние наведения
+            currentlyHoveredOrDraggedGainParam = nullptr;
             // currentGainHoverState = GainHoverState::None; // Если будет
         }
         setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -620,6 +782,7 @@ namespace MBRP_GUI
                 else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMid) lastCrossoverHoverStateForColor = CrossoverHoverState::HoveringMid;
                 else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMidHigh) lastCrossoverHoverStateForColor = CrossoverHoverState::HoveringMidHigh;
             }
+            startPopupHideDelay();
             currentCrossoverDragState = CrossoverDraggingState::None;
             mouseMove(event);
             return;

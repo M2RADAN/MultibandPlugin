@@ -22,10 +22,10 @@ namespace ColorScheme
 
     // --- Цвета анализатора (адаптированные под светлый фон) ---
     inline juce::Colour getAnalyzerBackgroundColor() { return colorHelper(juce::Colour(0xFF2D2D2D)); }     // Фон анализатора - белый
-    inline juce::Colour getAnalyzerGridBaseColor() { return colorHelper(juce::Colours::lightgrey); } // Сетка анализатора
+    inline juce::Colour getAnalyzerGridBaseColor() { return colorHelper(juce::Colour(0xFF4D4D4D)); } // Сетка анализатора
     inline juce::Colour getScaleTextColor() { return getTextColor(); }                       // Текст шкал (темно-серый)
     inline juce::Colour getAnalyzerPeakTextColor() { return getTextColor(); }                       // Текст пика
-    inline juce::Colour getZeroDbLineBaseColor() { return colorHelper(juce::Colours::darkgrey); }  // Линия 0 дБ (темная)
+    inline juce::Colour getZeroDbLineBaseColor() { return colorHelper(juce::Colour(0xFF4D4D4D)); }  // Линия 0 дБ (темная)
 
     // --- Цвета спектра и линий (можно оставить яркими) ---
     inline juce::Colour getInputSignalColor() { return colorHelper(juce::Colour(0xff008cff)); } // Синий для спектра
