@@ -156,136 +156,151 @@ void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
     const int padding = 10;
     const int smallPadding = 5;
-    const int titleBarHeight = 30; // Опциональная высота для заголовка "MBRP" и кнопки Bypass
+    const int titleBarHeight = 30;
 
     // --- 1. Верхняя панель (Название плагина "MBRP" и общий Bypass) ---
     auto titleArea = bounds.removeFromTop(titleBarHeight).reduced(padding, 0);
-    // bypassButton размещаем справа на этой панели
     bypassButton.setBounds(titleArea.removeFromRight(60).reduced(0, smallPadding / 2));
-    // Оставшееся место в titleArea можно использовать для текста "MBRP" (см. paint)
+    bounds.removeFromTop(smallPadding);
 
-    bounds.removeFromTop(smallPadding); // Отступ после верхней панели
-
-    // --- 2. Секция слайдеров кроссоверов ---
-    const int labelHeight = 15;
-    const int linearSliderHeight = 40;
-    const int crossoverControlHeight = labelHeight + linearSliderHeight;
-    auto crossoverSection = bounds.removeFromTop(crossoverControlHeight).reduced(padding, 0);
-    // ... (логика размещения 3-х слайдеров кроссовера без изменений) ...
-    int numCrossoverSliders = 3;
-    int singleCrossoverWidth = (crossoverSection.getWidth() - (numCrossoverSliders - 1) * padding) / numCrossoverSliders;
-    auto lowMidArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
-    lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
-    lowMidCrossoverSlider.setBounds(lowMidArea);
-    crossoverSection.removeFromLeft(padding);
-    auto midArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
-    midCrossoverLabel.setBounds(midArea.removeFromTop(labelHeight));
-    midCrossoverSlider.setBounds(midArea);
-    crossoverSection.removeFromLeft(padding);
-    auto midHighArea = crossoverSection;
-    midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
-    midHighCrossoverSlider.setBounds(midHighArea);
-    bounds.removeFromTop(padding);
-
-    // --- 3. Панель выбора активной полосы и кнопки S/M/B под ней ---
-    const int bandSelectHeight = 30;
-    const int smbButtonsHeight = 25; // Высота для кнопок S/M/B
-    auto bandControlsArea = bounds.removeFromTop(bandSelectHeight + smbButtonsHeight + smallPadding).reduced(padding, 0);
-
-    auto bandSelectRect = bandControlsArea.removeFromTop(bandSelectHeight);
-    int bandSelectControlsTargetWidth = juce::jmax(240, getWidth() * 3 / 5);
-    bandSelectControls.setBounds(
-        bandSelectRect.getCentreX() - bandSelectControlsTargetWidth / 2,
-        bandSelectRect.getY(),
-        bandSelectControlsTargetWidth,
-        bandSelectHeight
-    );
-
-    bandControlsArea.removeFromTop(smallPadding);
-    auto smbRect = bandControlsArea;
-    juce::FlexBox smbFlexBox;
-    smbFlexBox.flexDirection = juce::FlexBox::Direction::row;
-    smbFlexBox.justifyContent = juce::FlexBox::JustifyContent::center;
-    smbFlexBox.alignItems = juce::FlexBox::AlignItems::center;
-    const int smbButtonWidth = 40;
-    smbFlexBox.items.add(juce::FlexItem(bandBypassButton).withWidth(smbButtonWidth).withHeight(smbButtonsHeight).withMargin(smallPadding));
-    smbFlexBox.items.add(juce::FlexItem(bandSoloButton).withWidth(smbButtonWidth).withHeight(smbButtonsHeight).withMargin(smallPadding));
-    smbFlexBox.items.add(juce::FlexItem(bandMuteButton).withWidth(smbButtonWidth).withHeight(smbButtonsHeight).withMargin(smallPadding));
-    int totalSmbWidth = 3 * smbButtonWidth + 4 * smallPadding;
-    smbFlexBox.performLayout(smbRect.withSizeKeepingCentre(totalSmbWidth, smbButtonsHeight));
-    bounds.removeFromTop(padding);
-
-    // --- 4. Ряд радиальных слайдеров (Gain, Reverb, Pan) ---
+    // --- Зона для контролов, которые располагаются над анализатором, когда он ВИДЕН ---
+    // (Gain, Reverb, Pan)
     const int rotarySliderDiameter = 80;
-    const int rotaryTitleHeight = 16;    // Уменьшил немного для компактности
+    const int rotaryTitleHeight = 16;
     const int rotarySliderTotalHeight = rotaryTitleHeight + rotarySliderDiameter + smallPadding;
-
-    auto mainControlsRowArea = bounds.removeFromTop(rotarySliderTotalHeight).reduced(padding, 0);
+    auto topControlsArea = bounds.removeFromTop(rotarySliderTotalHeight).reduced(padding, 0);
 
     juce::FlexBox mainControlsFlexBox;
     mainControlsFlexBox.flexDirection = juce::FlexBox::Direction::row;
     mainControlsFlexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround;
     mainControlsFlexBox.alignItems = juce::FlexBox::AlignItems::center;
 
-    RotarySliderWithLabels* slidersInRow[] = { &gainSlider, &wetSlider, &spaceSlider, &distanceSlider, &delaySlider, &panSlider };
-    juce::Label* labelsForSliders[] = { nullptr, nullptr, nullptr, nullptr, nullptr, &panLabel }; // panLabel для panSlider
+    // Добавляем слайдеры в FlexBox (Gain, Reverb, Pan)
+    mainControlsFlexBox.items.add(juce::FlexItem(gainSlider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+    mainControlsFlexBox.items.add(juce::FlexItem(wetSlider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+    mainControlsFlexBox.items.add(juce::FlexItem(spaceSlider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+    mainControlsFlexBox.items.add(juce::FlexItem(distanceSlider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+    mainControlsFlexBox.items.add(juce::FlexItem(delaySlider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
 
-    for (int i = 0; i < 6; ++i) {
-        auto& slider = *slidersInRow[i];
-        auto* label = labelsForSliders[i];
-
-        if (label && slider.getName().isEmpty()) { // Если у слайдера нет своего Title, используем внешнюю метку над ним
-            auto container = std::make_unique<juce::Component>(); // Используем unique_ptr для управления
-            addAndMakeVisible(*container);
-            slider.setBounds(0, rotaryTitleHeight + smallPadding / 2, rotarySliderDiameter, rotarySliderDiameter);
-            label->setBounds(0, 0, rotarySliderDiameter, rotaryTitleHeight);
-            label->setJustificationType(juce::Justification::centredBottom); // Выравниваем метку
-            container->addAndMakeVisible(slider);
-            container->addAndMakeVisible(*label);
-            mainControlsFlexBox.items.add(juce::FlexItem(*container).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
-            // ВАЖНО: нужно где-то хранить эти unique_ptr<Component> контейнеры, чтобы они не удалялись.
-            // Либо не использовать unique_ptr, а добавлять их как члены класса PluginEditor.
-            // Для простоты пока без этого сложного контейнера, panLabel будет просто позиционироваться.
-            // Вместо этого сделаем проще:
-            // mainControlsFlexBox.items.add(juce::FlexItem(slider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
-            // panLabel.setBounds(panSlider.getX(), panSlider.getY() - rotaryTitleHeight - smallPadding, rotarySliderDiameter, rotaryTitleHeight);
-
-        }
-        else {
-            mainControlsFlexBox.items.add(juce::FlexItem(slider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
-            if (label) label->setVisible(false); // Скрываем внешнюю метку, если у слайдера есть своя
-        }
+    if (panSlider.getName().isEmpty()) {
+        // Если panSlider не имеет своего title, значит panLabel должна быть видима
+        // и нужно создать контейнер для panSlider и panLabel.
+        // Для простоты, здесь мы просто разместим panSlider, а panLabel будет позиционироваться относительно него.
+        mainControlsFlexBox.items.add(juce::FlexItem(panSlider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+        panLabel.setVisible(true);
     }
-    mainControlsFlexBox.performLayout(mainControlsRowArea);
+    else {
+        mainControlsFlexBox.items.add(juce::FlexItem(panSlider).withWidth(rotarySliderDiameter).withHeight(rotarySliderTotalHeight));
+        panLabel.setVisible(false);
+    }
+    mainControlsFlexBox.performLayout(topControlsArea);
 
-    // Корректировка позиции panLabel, если он видим
+    // Корректировка позиции panLabel
     if (panLabel.isVisible()) {
-        panLabel.setBounds(panSlider.getX(), mainControlsRowArea.getY(), rotarySliderDiameter, rotaryTitleHeight);
+        panLabel.setBounds(panSlider.getX(), topControlsArea.getY() - rotaryTitleHeight - smallPadding, rotarySliderDiameter, rotaryTitleHeight);
+        // Может потребоваться более точное позиционирование, если FlexBox сдвинул слайдеры
+        // или просто panLabel.setTopLeftPosition(panSlider.getX(), panSlider.getY() - rotaryTitleHeight - smallPadding);
     }
-
-
     bounds.removeFromTop(padding);
 
-    // --- 5. Область анализатора и кнопка его включения/выключения ---
-    // Кнопка теперь будет справа сверху от этой финальной области 'bounds'
+    // --- Область, где будет либо анализатор, либо альтернативные контролы ---
+    auto mainDisplayArea = bounds.reduced(padding, padding);
+
+    // Кнопка включения/выключения анализатора всегда видна, справа сверху от этой области
     const int analyzerButtonSize = 28;
-    auto analyzerArea = bounds.reduced(padding, padding); // Основная область для графика
-
-    controlBar.analyzerButton.setBounds(analyzerArea.getRight() - analyzerButtonSize - smallPadding,
-        analyzerArea.getY() + smallPadding,
+    controlBar.analyzerButton.setBounds(mainDisplayArea.getRight() - analyzerButtonSize - smallPadding,
+        mainDisplayArea.getY() + smallPadding,
         analyzerButtonSize, analyzerButtonSize);
-    controlBar.analyzerButton.toFront(true); // Убедимся, что кнопка поверх анализатора
+    controlBar.analyzerButton.toFront(true);
 
-    analyzer.setBounds(analyzerArea);
-    analyzerOverlay.setBounds(analyzer.getBounds());
+    if (analyzer.isVisible()) // Если анализатор должен быть виден
+    {
+        analyzer.setBounds(mainDisplayArea);
+        analyzerOverlay.setBounds(analyzer.getBounds());
+    }
+    else // Иначе, на этом месте показываем контролы кроссоверов и выбора полосы
+    {
+        auto alternativeControlsArea = mainDisplayArea; // Используем ту же область
+
+        // 1. Секция слайдеров кроссоверов
+        const int labelHeightAlt = 15;
+        const int linearSliderHeightAlt = 40;
+        const int crossoverControlHeightAlt = labelHeightAlt + linearSliderHeightAlt;
+        auto crossoverSectionAlt = alternativeControlsArea.removeFromTop(crossoverControlHeightAlt);
+
+        int numCrossoverSlidersAlt = 3;
+        int singleCrossoverWidthAlt = (crossoverSectionAlt.getWidth() - (numCrossoverSlidersAlt - 1) * padding) / numCrossoverSlidersAlt;
+
+        auto lowMidAreaAlt = crossoverSectionAlt.removeFromLeft(singleCrossoverWidthAlt);
+        lowMidCrossoverLabel.setBounds(lowMidAreaAlt.removeFromTop(labelHeightAlt));
+        lowMidCrossoverSlider.setBounds(lowMidAreaAlt);
+        crossoverSectionAlt.removeFromLeft(padding);
+        auto midAreaAlt = crossoverSectionAlt.removeFromLeft(singleCrossoverWidthAlt);
+        midCrossoverLabel.setBounds(midAreaAlt.removeFromTop(labelHeightAlt));
+        midCrossoverSlider.setBounds(midAreaAlt);
+        crossoverSectionAlt.removeFromLeft(padding);
+        auto midHighAreaAlt = crossoverSectionAlt;
+        midHighCrossoverLabel.setBounds(midHighAreaAlt.removeFromTop(labelHeightAlt));
+        midHighCrossoverSlider.setBounds(midHighAreaAlt);
+
+        alternativeControlsArea.removeFromTop(padding);
+
+        // 2. Панель выбора активной полосы и кнопки S/M/B под ней
+        const int bandSelectHeightAlt = 30;
+        const int smbButtonsHeightAlt = 25;
+        auto bandSelectAreaAlt = alternativeControlsArea.removeFromTop(bandSelectHeightAlt);
+        int bandSelectControlsTargetWidthAlt = juce::jmax(240, alternativeControlsArea.getWidth() * 4 / 5);
+        bandSelectControls.setBounds(
+            bandSelectAreaAlt.getCentreX() - bandSelectControlsTargetWidthAlt / 2,
+            bandSelectAreaAlt.getY(),
+            bandSelectControlsTargetWidthAlt,
+            bandSelectHeightAlt
+        );
+
+        alternativeControlsArea.removeFromTop(smallPadding);
+        auto smbRectAlt = alternativeControlsArea.removeFromTop(smbButtonsHeightAlt);
+        juce::FlexBox smbFlexBoxAlt;
+        smbFlexBoxAlt.flexDirection = juce::FlexBox::Direction::row;
+        smbFlexBoxAlt.justifyContent = juce::FlexBox::JustifyContent::center;
+        smbFlexBoxAlt.alignItems = juce::FlexBox::AlignItems::center;
+        const int smbButtonWidthAlt = 40;
+        smbFlexBoxAlt.items.add(juce::FlexItem(bandBypassButton).withWidth(smbButtonWidthAlt).withHeight(smbButtonsHeightAlt).withMargin(smallPadding));
+        smbFlexBoxAlt.items.add(juce::FlexItem(bandSoloButton).withWidth(smbButtonWidthAlt).withHeight(smbButtonsHeightAlt).withMargin(smallPadding));
+        smbFlexBoxAlt.items.add(juce::FlexItem(bandMuteButton).withWidth(smbButtonWidthAlt).withHeight(smbButtonsHeightAlt).withMargin(smallPadding));
+        int totalSmbWidthAlt = 3 * smbButtonWidthAlt + 4 * smallPadding;
+        smbFlexBoxAlt.performLayout(smbRectAlt.withSizeKeepingCentre(totalSmbWidthAlt, smbButtonsHeightAlt));
+    }
 }
 
 
 void MBRPAudioProcessorEditor::handleAnalyzerToggle(bool shouldBeOn)
 {
     processorRef.setCopyToFifo(shouldBeOn);
-    analyzer.setAnalyzerActive(shouldBeOn);
-    DBG("Analyzer Toggled: " << (shouldBeOn ? "ON" : "OFF"));
+    analyzer.setAnalyzerActive(shouldBeOn); // Этот метод в SpectrumAnalyzer должен управлять его внутренней логикой и перерисовкой
+
+    // Управляем видимостью компонентов
+    analyzer.setVisible(shouldBeOn);
+    analyzerOverlay.setVisible(shouldBeOn);
+
+    // Контролы кроссоверов и выбора полосы показываются, когда анализатор ВЫКЛЮЧЕН
+    bool showAlternativeControls = !shouldBeOn;
+    lowMidCrossoverSlider.setVisible(showAlternativeControls);
+    lowMidCrossoverLabel.setVisible(showAlternativeControls);
+    midCrossoverSlider.setVisible(showAlternativeControls);
+    midCrossoverLabel.setVisible(showAlternativeControls);
+    midHighCrossoverSlider.setVisible(showAlternativeControls);
+    midHighCrossoverLabel.setVisible(showAlternativeControls);
+    bandSelectControls.setVisible(showAlternativeControls);
+    // Кнопки S/M/B также зависят от этого
+    bandBypassButton.setVisible(showAlternativeControls);
+    bandSoloButton.setVisible(showAlternativeControls);
+    bandMuteButton.setVisible(showAlternativeControls);
+
+
+    DBG("Analyzer Toggled: " << (shouldBeOn ? "ON" : "OFF") << ", AltControls: " << (showAlternativeControls ? "ON" : "OFF"));
+
+    // Пересчитываем компоновку, так как видимость ключевых блоков изменилась
+    resized();
 }
 
 void MBRPAudioProcessorEditor::timerCallback() {
