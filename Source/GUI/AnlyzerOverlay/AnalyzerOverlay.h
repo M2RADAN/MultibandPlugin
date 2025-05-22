@@ -2,39 +2,46 @@
 
 #include <JuceHeader.h>
 #include <functional> 
-#include "../Source/GUI/LookAndFeel.h" // Для ColorScheme
-
-namespace juce { class AudioParameterFloat; }
+#include "../Source/GUI/LookAndFeel.h" 
+#include "../Source/PluginProcessor.h" 
 
 namespace MBRP_GUI
 {
     // Функции маппинга (оставляем здесь или переносим в Utilities, если используются еще где-то)
     template<typename FloatType>
     static FloatType mapFreqToXLog(FloatType freq, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
-        freq = juce::jlimit(minF, maxF, freq); // Ограничиваем частоту диапазоном
-        // Проверка на допустимые значения для логарифмирования
+        freq = juce::jlimit(minF, maxF, freq);
         if (minF <= 0 || maxF <= 0 || minF >= maxF || freq <= 0 || width <= 0) return left;
         return left + width * (std::log(freq / minF) / std::log(maxF / minF));
     }
 
     template<typename FloatType>
     static FloatType mapXToFreqLog(FloatType x, FloatType left, FloatType width, FloatType minF, FloatType maxF) {
-        // Ограничиваем x границами области рисования
         x = juce::jlimit(left, left + width, x);
         if (width <= 0 || minF <= 0 || maxF <= 0 || minF >= maxF) return minF;
         float proportion = (x - left) / width;
-        // Убедимся, что proportion не выходит за [0, 1] из-за ошибок округления
         proportion = juce::jlimit(0.0f, 1.0f, proportion);
         return minF * std::exp(proportion * std::log(maxF / minF));
+    }
+
+    template<typename FloatType>
+    static FloatType mapGainDbToY(FloatType dbValue, FloatType top, FloatType height, FloatType minDbGUI, FloatType maxDbGUI) {
+        if (height <= 0 || maxDbGUI <= minDbGUI) return top + height / 2.0f;
+        float proportion = (dbValue - minDbGUI) / (maxDbGUI - minDbGUI);
+        return top + height * (1.0f - juce::jlimit(0.0f, 1.0f, proportion));
+    }
+
+    template<typename FloatType>
+    static FloatType mapYToGainDb(FloatType y, FloatType top, FloatType height, FloatType minDbGUI, FloatType maxDbGUI) {
+        if (height <= 0 || maxDbGUI <= minDbGUI) return (minDbGUI + maxDbGUI) / 2.0f;
+        float proportion = (y - top) / height;
+        return minDbGUI + (1.0f - juce::jlimit(0.0f, 1.0f, proportion)) * (maxDbGUI - minDbGUI);
     }
 
     class AnalyzerOverlay final : public juce::Component, public juce::Timer
     {
     public:
-        // Конструктор теперь принимает 3 параметра кроссовера
-        AnalyzerOverlay(juce::AudioParameterFloat& lowMidXover,
-            juce::AudioParameterFloat& midXover,
-            juce::AudioParameterFloat& midHighXover);
+        AnalyzerOverlay(MBRPAudioProcessor& p);
         ~AnalyzerOverlay() override = default;
 
         void paint(juce::Graphics& g) override;
@@ -47,27 +54,32 @@ namespace MBRP_GUI
         void mouseDrag(const juce::MouseEvent& event) override;
         void mouseUp(const juce::MouseEvent& event) override;
 
-        std::function<void(int bandIndex)> onBandAreaClicked; // bandIndex 0..3
+        std::function<void(int bandIndex)> onBandAreaClicked;
 
     private:
+        // Объявление метода класса
+        
+
         void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<float> graphBounds);
         void drawHoverHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds);
+        void drawGainMarkers(juce::Graphics& g, juce::Rectangle<float> graphBounds);
+
         float xToFrequency(float x, const juce::Rectangle<float>& graphBounds) const;
         juce::Rectangle<float> getGraphBounds() const;
 
-        // Три параметра кроссовера
-        juce::AudioParameterFloat& lowMidXoverParam;
-        juce::AudioParameterFloat& midXoverParam;
-        juce::AudioParameterFloat& midHighXoverParam;
+        MBRPAudioProcessor& processorRef;
 
-        enum class DraggingState { None, DraggingLowMid, DraggingMid, DraggingMidHigh };
-        DraggingState currentDraggingState{ DraggingState::None };
+        enum class CrossoverDraggingState { None, DraggingLowMid, DraggingMid, DraggingMidHigh };
+        CrossoverDraggingState currentCrossoverDragState{ CrossoverDraggingState::None };
+        enum class CrossoverHoverState { None, HoveringLowMid, HoveringMid, HoveringMidHigh };
+        CrossoverHoverState currentCrossoverHoverState{ CrossoverHoverState::None };
+        CrossoverHoverState lastCrossoverHoverStateForColor{ CrossoverHoverState::None };
 
-        enum class HoverState { None, HoveringLowMid, HoveringMid, HoveringMidHigh };
-        HoverState currentHoverState{ HoverState::None };
-        HoverState lastHoverStateForColor{ HoverState::None };
-
-        const float dragTolerance = 8.0f;
+        enum class GainDraggingState { None, DraggingLowGain, DraggingLowMidGain, DraggingMidHighGain, DraggingHighGain };
+        GainDraggingState currentGainDragState{ GainDraggingState::None };
+        std::pair<GainDraggingState, juce::AudioParameterFloat*> getGainInfoAt(const juce::MouseEvent& event, const juce::Rectangle<float>& graphBounds);
+        const float dragToleranceX = 8.0f;
+        const float dragToleranceY = 10.0f;
         const float highlightRectWidth = 8.0f;
 
         float currentHighlightAlpha = 0.0f;
@@ -75,8 +87,12 @@ namespace MBRP_GUI
         const float alphaAnimationSpeed = 0.2f;
         const float targetAlphaValue = 0.35f;
 
+        // Эти константы могут быть static constexpr, если они не меняются для экземпляров
         static constexpr float minLogFreq = 20.0f;
         static constexpr float maxLogFreq = 20000.0f;
+
+        const float gainMarkerMinDbOnGui = -36.0f;
+        const float gainMarkerMaxDbOnGui = 12.0f;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AnalyzerOverlay)
     };

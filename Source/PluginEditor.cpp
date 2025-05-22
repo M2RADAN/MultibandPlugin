@@ -25,37 +25,60 @@ void ControlBar::analyzerButtonToggled()
 MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p),
     analyzer(p),
-    // Передаем все три параметра кроссовера в AnalyzerOverlay
-    analyzerOverlay(*p.lowMidCrossover, *p.midCrossover, *p.midHighCrossover),
+    analyzerOverlay(p),
     wetSlider(nullptr, " %", "Wet"),
     spaceSlider(nullptr, " %", "Space"),
     distanceSlider(nullptr, " %", "Distance"),
     delaySlider(nullptr, " ms", "Pre-Delay"),
-    panSlider(nullptr, "", "Pan"), // Суффикс не нужен, getDisplayString сам форматирует Pan
+    panSlider(nullptr, "", "Pan"),
     gainSlider(nullptr, " dB", "Gain"),
     lowMidCrossoverAttachment(processorRef.getAPVTS(), "lowMidCrossover", lowMidCrossoverSlider),
-    midCrossoverAttachment(processorRef.getAPVTS(), "midCrossover", midCrossoverSlider), // Аттачмент для нового слайдера
+    midCrossoverAttachment(processorRef.getAPVTS(), "midCrossover", midCrossoverSlider),
     midHighCrossoverAttachment(processorRef.getAPVTS(), "midHighCrossover", midHighCrossoverSlider)
 {
     setLookAndFeel(&lnf);
     processorRef.setCopyToFifo(true);
 
+    // Добавляем компоненты (порядок может влиять на Z-order, но для layout'а не так критично)
     addAndMakeVisible(controlBar);
-    addAndMakeVisible(analyzer);
-    addAndMakeVisible(analyzerOverlay);
-    addAndMakeVisible(bandSelectControls); // Теперь с 4-мя кнопками
+    addAndMakeVisible(bypassButton); // Общий Bypass
 
-    auto setupReverbSliderComponent = [&](RotarySliderWithLabels& slider) {
+    addAndMakeVisible(lowMidCrossoverSlider); addAndMakeVisible(lowMidCrossoverLabel);
+    addAndMakeVisible(midCrossoverSlider);    addAndMakeVisible(midCrossoverLabel);
+    addAndMakeVisible(midHighCrossoverSlider); addAndMakeVisible(midHighCrossoverLabel);
+
+    addAndMakeVisible(bandSelectControls);
+
+    addAndMakeVisible(gainSlider);
+    addAndMakeVisible(bandBypassButton);
+    addAndMakeVisible(bandSoloButton);
+    addAndMakeVisible(bandMuteButton);
+
+    addAndMakeVisible(wetSlider);
+    addAndMakeVisible(spaceSlider);
+    addAndMakeVisible(distanceSlider);
+    addAndMakeVisible(delaySlider);
+
+    addAndMakeVisible(panSlider);
+    addAndMakeVisible(panLabel);
+
+    addAndMakeVisible(analyzer);        // Анализатор добавляется одним из последних,
+    addAndMakeVisible(analyzerOverlay); // чтобы оверлей был поверх него, если он прозрачный
+
+    // Настройка слайдеров (как и раньше)
+    auto setupRotarySlider = [&](RotarySliderWithLabels& slider) {
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         slider.setPopupDisplayEnabled(true, true, this, 500);
-        addAndMakeVisible(slider);
-    };
+        // addAndMakeVisible(slider); // Уже сделано выше
+        };
 
-    setupReverbSliderComponent(wetSlider);
-    setupReverbSliderComponent(spaceSlider);
-    setupReverbSliderComponent(distanceSlider);
-    setupReverbSliderComponent(delaySlider);
-    setupReverbSliderComponent(gainSlider); 
+    setupRotarySlider(wetSlider);
+    setupRotarySlider(spaceSlider);
+    setupRotarySlider(distanceSlider);
+    setupRotarySlider(delaySlider);
+    setupRotarySlider(gainSlider);
+    setupRotarySlider(panSlider);
+
 
     controlBar.onAnalyzerToggle = [this](bool state) { handleAnalyzerToggle(state); };
     bool initialAnalyzerState = processorRef.isCopyToFifoEnabled();
@@ -66,8 +89,7 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     bypassButton.setButtonText("Bypass");
     bypassButton.setTooltip("Bypass the plugin processing");
     bypassButton.setClickingTogglesState(true);
-    addAndMakeVisible(bypassButton);
-
+    // addAndMakeVisible(bypassButton); // Уже сделано
 
     auto setupStandardSlider = [&](juce::Slider& slider, juce::Label& label, const juce::String& labelText) {
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -77,65 +99,56 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
         slider.setColour(juce::Slider::trackColourId, ColorScheme::getSliderTrackColor());
         slider.setColour(juce::Slider::textBoxTextColourId, ColorScheme::getSecondaryTextColor());
         slider.setColour(juce::Slider::textBoxOutlineColourId, ColorScheme::getSliderTrackColor().darker(0.2f));
-        slider.setName(labelText); // Важно для идентификации в LookAndFeel или для автоматизации
-        addAndMakeVisible(slider);
-
+        slider.setName(labelText);
+        // addAndMakeVisible(slider); // Уже сделано
         label.setText(labelText, juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
         label.setFont(juce::Font(12.0f));
         label.setColour(juce::Label::textColourId, ColorScheme::getTextColor());
-        addAndMakeVisible(label);
-    };
+        // addAndMakeVisible(label); // Уже сделано
+        };
 
     setupStandardSlider(lowMidCrossoverSlider, lowMidCrossoverLabel, "Low / L-Mid");
-    setupStandardSlider(midCrossoverSlider, midCrossoverLabel, "L-Mid / M-High"); // Новый слайдер
+    setupStandardSlider(midCrossoverSlider, midCrossoverLabel, "L-Mid / M-High");
     setupStandardSlider(midHighCrossoverSlider, midHighCrossoverLabel, "M-High / High");
-
-    panSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    panSlider.setPopupDisplayEnabled(true, true, this, 500);
-    addAndMakeVisible(panSlider);
 
     panLabel.setText("Pan", juce::dontSendNotification);
     panLabel.setJustificationType(juce::Justification::centred);
     panLabel.setFont(juce::Font(14.0f, juce::Font::bold));
     panLabel.setColour(juce::Label::textColourId, ColorScheme::getDarkTextColor());
-    addAndMakeVisible(panLabel);
+    // addAndMakeVisible(panLabel); // Уже сделано
 
-    // Настройка кнопок S/M/B для полос ---
     auto setupBandToggleButton = [&](juce::TextButton& button, const juce::String& text) {
         button.setButtonText(text);
-        button.setClickingTogglesState(true); // Важно для аттачментов и логики S/M/B
-        // button.setColour(juce::TextButton::buttonColourId, ColorScheme::getToggleButtonOffColor());
-        // button.setColour(juce::TextButton::buttonOnColourId, ColorScheme::getSliderThumbColor().darker()); // Пример цвета для "включено"
-        // LookAndFeel позаботится о цветах, если он настроен для TextButton
-        addAndMakeVisible(button);
-    };
-    setupBandToggleButton(bandBypassButton, "B"); // B for Bypass
-    setupBandToggleButton(bandSoloButton, "S");   // S for Solo
-    setupBandToggleButton(bandMuteButton, "M");   // M for Mute
-    bandBypassButton.setTooltip("Bypass selected band");
+        button.setClickingTogglesState(true);
+        // addAndMakeVisible(button); // Уже сделано
+        };
+    setupBandToggleButton(bandBypassButton, "B");
+    setupBandToggleButton(bandSoloButton, "S");
+    setupBandToggleButton(bandMuteButton, "M");
+    bandBypassButton.setTooltip("Bypass selected band effects");
     bandSoloButton.setTooltip("Solo selected band");
     bandMuteButton.setTooltip("Mute selected band");
 
     bandSelectControls.onBandSelected = [this](int bandIndex) {
-        currentSelectedBand = bandIndex; 
+        currentSelectedBand = bandIndex;
         updatePanAttachment(bandIndex);
         updateReverbAttachments(bandIndex);
-        updateBandSpecificControls(bandIndex); 
-    };
-    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); }; // bandIndex 0..3
+        updateBandSpecificControls(bandIndex);
+        };
+    analyzerOverlay.onBandAreaClicked = [this](int bandIndex) { handleBandAreaClick(bandIndex); };
 
-    currentSelectedBand = 0; // Убедимся, что начальное состояние верное
+    currentSelectedBand = 0;
     updatePanAttachment(currentSelectedBand);
     updateReverbAttachments(currentSelectedBand);
-    updateBandSpecificControls(currentSelectedBand);  // Инициализация для Low полосы
+    updateBandSpecificControls(currentSelectedBand);
 
-    setSize(900, 1000); // Используем сохраненный размер
-    // startTimerHz(30); // Если таймер нужен для чего-то еще (например, анимации в редакторе)
+    // Увеличим высоту по умолчанию, чтобы вместить все контролы сверху
+    setSize(900, 750); // Примерная высота, подберите по факту
 }
 
 MBRPAudioProcessorEditor::~MBRPAudioProcessorEditor() {
-   // processorRef.setSavedEditorSize({ getWidth(), getHeight() }); // Сохраняем размер окна
+    // processorRef.setSavedEditorSize({ getWidth(), getHeight() }); // Раскомментируйте, если хотите сохранять размер
     processorRef.setCopyToFifo(false);
     setLookAndFeel(nullptr);
 }
@@ -146,36 +159,20 @@ void MBRPAudioProcessorEditor::paint(juce::Graphics& g) {
 
 void MBRPAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
-
     const int padding = 10;
     const int smallPadding = 5;
-    const int controlBarHeight = 32;
-    const int analyzerHeight = 300;
+
+    // --- 1. Общая верхняя панель (ControlBar и общий Bypass) ---
+    const int globalControlsHeight = 32;
+    auto globalControlsArea = bounds.removeFromTop(globalControlsHeight).reduced(padding, 0);
+    controlBar.setBounds(globalControlsArea.removeFromLeft(globalControlsArea.getWidth() / 2));
+    bypassButton.setBounds(globalControlsArea.removeFromRight(60).reduced(0, smallPadding));
+    bounds.removeFromTop(smallPadding); // Небольшой отступ после верхней панели
+
+    // --- 2. Панель управления кроссоверами ---
     const int labelHeight = 15;
     const int linearSliderHeight = 40;
-    const int bandSelectHeight = 30;
-
-    const int rotarySliderDiameter = 100;
-    const int rotaryTitleHeight = 18;
-    const int rotarySliderTotalHeight = rotaryTitleHeight + rotarySliderDiameter + smallPadding;
-    const int rotarySliderWidth = rotarySliderDiameter;
-
-    // 1. Верхняя секция: ControlBar и BypassButton
-    auto topSection = bounds.removeFromTop(controlBarHeight).reduced(padding, 0);
-    controlBar.setBounds(topSection.removeFromLeft(topSection.getWidth() / 2));
-    bypassButton.setBounds(topSection.removeFromRight(60).reduced(0, smallPadding));
-
-    bounds.removeFromTop(padding);
-
-    // 2. Секция анализатора
-    auto analyzerArea = bounds.removeFromTop(analyzerHeight).reduced(padding, 0);
-    analyzer.setBounds(analyzerArea);
-    analyzerOverlay.setBounds(analyzerArea);
-
-    bounds.removeFromTop(padding);
-
-    // 3. Секция слайдеров кроссоверов (теперь 3 слайдера)
-    int crossoverControlHeight = labelHeight + linearSliderHeight;
+    const int crossoverControlHeight = labelHeight + linearSliderHeight;
     auto crossoverSection = bounds.removeFromTop(crossoverControlHeight).reduced(padding, 0);
     int numCrossoverSliders = 3;
     int singleCrossoverWidth = (crossoverSection.getWidth() - (numCrossoverSliders - 1) * padding) / numCrossoverSliders;
@@ -183,113 +180,96 @@ void MBRPAudioProcessorEditor::resized() {
     auto lowMidArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
     lowMidCrossoverLabel.setBounds(lowMidArea.removeFromTop(labelHeight));
     lowMidCrossoverSlider.setBounds(lowMidArea);
-
     crossoverSection.removeFromLeft(padding);
     auto midArea = crossoverSection.removeFromLeft(singleCrossoverWidth);
     midCrossoverLabel.setBounds(midArea.removeFromTop(labelHeight));
     midCrossoverSlider.setBounds(midArea);
-
     crossoverSection.removeFromLeft(padding);
-    auto midHighArea = crossoverSection; // Оставшееся место
+    auto midHighArea = crossoverSection;
     midHighCrossoverLabel.setBounds(midHighArea.removeFromTop(labelHeight));
     midHighCrossoverSlider.setBounds(midHighArea);
-
     bounds.removeFromTop(padding);
 
-    // 4. Секция кнопок выбора полосы (BandSelectControls)
+    // --- 3. Панель выбора активной полосы ---
+    const int bandSelectHeight = 30;
     auto bandSelectArea = bounds.removeFromTop(bandSelectHeight);
-    // Ширина кнопок выбора полосы, например, 60% ширины редактора
-    int bandSelectControlsTargetWidth = juce::jmax(200, getWidth() * 2 / 3); // Минимум 200px, или 2/3 ширины
+    int bandSelectControlsTargetWidth = juce::jmax(200, getWidth() * 3 / 5); // Ширина кнопок выбора полосы
     bandSelectControls.setBounds(
         bandSelectArea.getCentreX() - bandSelectControlsTargetWidth / 2,
         bandSelectArea.getY(),
         bandSelectControlsTargetWidth,
         bandSelectHeight
     );
+    bounds.removeFromTop(padding);
 
-    bounds.removeFromTop(padding * 2 + smallPadding);
+    // --- 4. Панель управления параметрами выбранной полосы (Gain, S/M/B) ---
+    const int rotarySliderDiameterSmall = 70; // Уменьшим диаметр для этих контролов
+    const int rotaryTitleHeightSmall = 15;
+    const int rotarySliderTotalHeightSmall = rotaryTitleHeightSmall + rotarySliderDiameterSmall + smallPadding;
+    const int bandSMBButtonsHeight = 25;
+    const int bandSpecificControlsSectionHeight = rotarySliderTotalHeightSmall + bandSMBButtonsHeight + smallPadding;
 
-    // 4,5 СЕКЦИЯ: Контролы для текущей полосы (Gain, S/M/B) ---
-    // Разместим их под кнопками выбора полосы
-    const int bandControlsHeight = 30; // Высота для ряда кнопок S/M/B
-    const int gainSliderAreaHeight = rotarySliderTotalHeight; // Высота для слайдера громкости
+    auto bandSpecificControlsArea = bounds.removeFromTop(bandSpecificControlsSectionHeight).reduced(padding, 0);
+    auto gainAndSmbRow = juce::FlexBox(juce::FlexBox::Direction::row, juce::FlexBox::Wrap::noWrap,
+        juce::FlexBox::AlignContent::center, juce::FlexBox::AlignItems::center, juce::FlexBox::JustifyContent::center);
 
-    auto bandSpecificControlsArea = bounds.removeFromTop(gainSliderAreaHeight + bandControlsHeight + padding).reduced(padding * 2, 0); //padding*2 для отступов по бокам
+    // Слайдер Gain
+    gainAndSmbRow.items.add(juce::FlexItem(gainSlider).withWidth(rotarySliderDiameterSmall).withHeight(rotarySliderTotalHeightSmall).withMargin(juce::FlexItem::Margin(0, smallPadding, 0, smallPadding)));
 
-    // Сначала слайдер громкости по центру
-    auto gainArea = bandSpecificControlsArea.removeFromTop(gainSliderAreaHeight);
-    gainSlider.setBounds(gainArea.getCentreX() - rotarySliderWidth / 2, gainArea.getY(), rotarySliderWidth, rotarySliderTotalHeight);
+    // Контейнер для кнопок S/M/B
+    auto smbButtonContainer = juce::FlexBox(juce::FlexBox::Direction::column, juce::FlexBox::Wrap::noWrap,
+        juce::FlexBox::AlignContent::center, juce::FlexBox::AlignItems::center, juce::FlexBox::JustifyContent::center);
+    const int smbButtonWidth = 35;
+    const int smbButtonHeight = 22;
+    smbButtonContainer.items.add(juce::FlexItem(bandBypassButton).withWidth(smbButtonWidth).withHeight(smbButtonHeight).withMargin(smallPadding / 2));
+    smbButtonContainer.items.add(juce::FlexItem(bandSoloButton).withWidth(smbButtonWidth).withHeight(smbButtonHeight).withMargin(smallPadding / 2));
+    smbButtonContainer.items.add(juce::FlexItem(bandMuteButton).withWidth(smbButtonWidth).withHeight(smbButtonHeight).withMargin(smallPadding / 2));
 
-    // Затем кнопки S/M/B под ним
-    bandSpecificControlsArea.removeFromTop(smallPadding); // Отступ между слайдером и кнопками
-    auto smbButtonsArea = bandSpecificControlsArea.removeFromTop(bandControlsHeight);
+    gainAndSmbRow.items.add(juce::FlexItem(smbButtonContainer).withHeight(bandSMBButtonsHeight * 3 + smallPadding * 2).withMargin(juce::FlexItem::Margin(0, smallPadding, 0, padding))); // Добавляем контейнер кнопок в строку
 
-    juce::FlexBox smbFlexBox;
-    smbFlexBox.flexDirection = juce::FlexBox::Direction::row;
-    smbFlexBox.justifyContent = juce::FlexBox::JustifyContent::center; // Центрируем кнопки
-    smbFlexBox.alignItems = juce::FlexBox::AlignItems::center;
+    gainAndSmbRow.performLayout(bandSpecificControlsArea);
+    bounds.removeFromTop(padding);
 
-    const int smbButtonWidth = 50; // Фиксированная ширина для S/M/B кнопок
-    smbFlexBox.items.add(juce::FlexItem(bandBypassButton).withWidth(smbButtonWidth).withHeight(bandControlsHeight).withMargin(smallPadding));
-    smbFlexBox.items.add(juce::FlexItem(bandSoloButton).withWidth(smbButtonWidth).withHeight(bandControlsHeight).withMargin(smallPadding));
-    smbFlexBox.items.add(juce::FlexItem(bandMuteButton).withWidth(smbButtonWidth).withHeight(bandControlsHeight).withMargin(smallPadding));
 
-    // Область для FlexBox должна быть достаточно широкой, чтобы вместить кнопки
-    int totalSmbWidth = 3 * smbButtonWidth + 4 * smallPadding; // Примерная ширина
-    smbFlexBox.performLayout(smbButtonsArea.withSizeKeepingCentre(totalSmbWidth, bandControlsHeight));
-    // ---------------------------------------------------------------------
+    // --- 5. Панель управления реверберацией и панорамой (в один ряд) ---
+    const int effectsRotaryDiameter = 80;
+    const int effectsRotaryTitleHeight = 16;
+    const int effectsRotaryTotalHeight = effectsRotaryTitleHeight + effectsRotaryDiameter + smallPadding;
 
-    bounds.removeFromTop(padding); // Отступ перед ручками реверба/панорамы
+    auto effectsControlsArea = bounds.removeFromTop(effectsRotaryTotalHeight).reduced(padding, 0);
+    juce::FlexBox effectsFlexBox;
+    effectsFlexBox.flexDirection = juce::FlexBox::Direction::row;
+    effectsFlexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround; // или spaceBetween
+    effectsFlexBox.alignItems = juce::FlexBox::AlignItems::center;
 
-    // 5. Секция роторных ручек
-    auto rotaryMasterArea = bounds.reduced(padding, 0);
-
-    // --- Ручки реверба в ряд ---
-    int numReverbKnobs = 4;
-    int totalReverbKnobsWidth = numReverbKnobs * rotarySliderWidth + (numReverbKnobs - 1) * padding;
-    int reverbKnobsStartX = rotaryMasterArea.getX() + (rotaryMasterArea.getWidth() - totalReverbKnobsWidth) / 2;
-
-    auto reverbKnobsRowArea = rotaryMasterArea.removeFromTop(rotarySliderTotalHeight);
-    reverbKnobsRowArea.setX(reverbKnobsStartX);
-    reverbKnobsRowArea.setWidth(totalReverbKnobsWidth);
-
-    auto placeRotary = [&](RotarySliderWithLabels& slider, juce::Rectangle<int>& currentPlacementArea) {
-        if (currentPlacementArea.getWidth() >= rotarySliderWidth) {
-            auto knobArea = currentPlacementArea.removeFromLeft(rotarySliderWidth);
-            slider.setBounds(knobArea.getX(),
-                knobArea.getY() + (knobArea.getHeight() - rotarySliderTotalHeight) / 2,
-                rotarySliderWidth,
-                rotarySliderTotalHeight);
-            currentPlacementArea.removeFromLeft(padding); // Отступ после ручки
-        }
-    };
-
-    placeRotary(wetSlider, reverbKnobsRowArea);
-    placeRotary(spaceSlider, reverbKnobsRowArea);
-    placeRotary(distanceSlider, reverbKnobsRowArea);
-    placeRotary(delaySlider, reverbKnobsRowArea);
-
-    rotaryMasterArea.removeFromTop(padding);
-    // --- Ручка Pan ПОД ручками реверба и отцентрирована ---
-    const int panExternalLabelHeight = 18;
-    const int panControlTotalHeight = rotarySliderTotalHeight + smallPadding + (panSlider.getName().isEmpty() ? panExternalLabelHeight : 0);
-
-    if (rotaryMasterArea.getHeight() >= panControlTotalHeight) {
-        auto panControlArea = rotaryMasterArea.removeFromTop(panControlTotalHeight);
-        int panAreaX = panControlArea.getCentreX() - rotarySliderWidth / 2;
-        auto singlePanArea = juce::Rectangle<int>(panAreaX, panControlArea.getY(), rotarySliderWidth, panControlArea.getHeight());
-
-        if (panSlider.getName().isEmpty()) {
-            panLabel.setBounds(singlePanArea.removeFromTop(panExternalLabelHeight));
-            singlePanArea.removeFromTop(smallPadding);
-            panLabel.setVisible(true);
+    auto addRotaryToFlex = [&](RotarySliderWithLabels& slider, juce::Label* labelIfNoTitle = nullptr) {
+        if (labelIfNoTitle && slider.getName().isEmpty()) { // Если у слайдера нет своего Title, используем внешнюю метку над ним
+            auto container = juce::FlexBox(juce::FlexBox::Direction::column, juce::FlexBox::Wrap::noWrap,
+                juce::FlexBox::AlignContent::center, juce::FlexBox::AlignItems::center, juce::FlexBox::JustifyContent::center);
+            labelIfNoTitle->setSize(effectsRotaryDiameter, effectsRotaryTitleHeight); // Размер метки
+            container.items.add(juce::FlexItem(*labelIfNoTitle).withHeight(effectsRotaryTitleHeight));
+            container.items.add(juce::FlexItem(slider).withWidth(effectsRotaryDiameter).withHeight(effectsRotaryDiameter + smallPadding)); // Слайдер без его собственного Title
+            effectsFlexBox.items.add(juce::FlexItem(container).withWidth(effectsRotaryDiameter).withHeight(effectsRotaryTotalHeight));
         }
         else {
-            panLabel.setVisible(false);
+            effectsFlexBox.items.add(juce::FlexItem(slider).withWidth(effectsRotaryDiameter).withHeight(effectsRotaryTotalHeight));
         }
-        panSlider.setBounds(singlePanArea.withHeight(rotarySliderTotalHeight));
-    }
+        };
+
+    addRotaryToFlex(wetSlider);
+    addRotaryToFlex(spaceSlider);
+    addRotaryToFlex(distanceSlider);
+    addRotaryToFlex(delaySlider);
+    addRotaryToFlex(panSlider, &panLabel); // panLabel будет отображаться, если panSlider.getName() пуст
+
+    effectsFlexBox.performLayout(effectsControlsArea);
+    bounds.removeFromTop(padding);
+
+    // --- 6. Область анализатора (все оставшееся место) ---
+    analyzer.setBounds(bounds.reduced(padding, padding)); // Оставляем небольшие отступы вокруг анализатора
+    analyzerOverlay.setBounds(analyzer.getBounds()); // Оверлей точно по границам анализатора
 }
+
 
 void MBRPAudioProcessorEditor::handleAnalyzerToggle(bool shouldBeOn)
 {
@@ -308,70 +288,45 @@ void MBRPAudioProcessorEditor::timerCallback() {
     // В текущей структуре SpectrumAnalyzer из примеров witte/SimpleMBComp, он сам себя обновляет.
 }
 
-void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) { // bandIndex 0..3
+void MBRPAudioProcessorEditor::updatePanAttachment(int bandIndex) {
     juce::String paramId;
     juce::Colour bandColour;
-
     switch (bandIndex) {
-    case 0: // Low
-        paramId = "lowPan";
-        bandColour = ColorScheme::getLowBandColor();
-        break;
-    case 1: // Low-Mid
-        paramId = "lowMidPan";
-        // Можно определить новый цвет для Low-Mid, например, смесь оранжевого и зеленого, или новый уникальный
-        bandColour = ColorScheme::getLowMidBandColor(); // Предполагаем, что этот цвет добавлен в ColorScheme
-        break;
-    case 2: // Mid-High
-        paramId = "midHighPan";
-        bandColour = ColorScheme::getMidHighBandColor(); // Этот цвет уже был (бывший Mid)
-        break;
-    case 3: // High
-        paramId = "highPan";
-        bandColour = ColorScheme::getHighBandAltColor(); // Этот цвет уже был (бывший High), возможно переименовать
-        break;
+    case 0: paramId = "lowPan"; bandColour = ColorScheme::getLowBandColor(); break;
+    case 1: paramId = "lowMidPan"; bandColour = ColorScheme::getLowMidBandColor(); break;
+    case 2: paramId = "midHighPan"; bandColour = ColorScheme::getMidHighBandColor(); break;
+    case 3: paramId = "highPan"; bandColour = ColorScheme::getHighBandAltColor(); break;
     default: jassertfalse; return;
     }
-
     auto* targetParam = processorRef.getAPVTS().getParameter(paramId);
     auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(targetParam);
     jassert(rangedParam != nullptr); if (!rangedParam) return;
-
     panSlider.changeParam(rangedParam);
-
     panSlider.labels.clear();
     panSlider.labels.add({ 0.0f, "L" });
     panSlider.labels.add({ 0.5f, "C" });
     panSlider.labels.add({ 1.0f, "R" });
-
     panSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-
     panAttachment.reset();
     panAttachment = std::make_unique<SliderAttachment>(processorRef.getAPVTS(), paramId, panSlider);
-
-    panLabel.setText("Pan", juce::dontSendNotification);
-
+    panLabel.setText("Pan", juce::dontSendNotification); // Внешняя метка остается "Pan"
     panSlider.setColour(juce::Slider::thumbColourId, bandColour);
     panSlider.setColour(juce::Slider::rotarySliderFillColourId, bandColour.withAlpha(0.7f));
     panSlider.setColour(juce::Slider::rotarySliderOutlineColourId, bandColour.darker(0.3f));
     panSlider.repaint();
 }
 
-void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex) // bandIndex 0..3
+void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex)
 {
     DBG("Editor received band click from overlay: " << bandIndex);
-
     juce::ToggleButton* buttonToSelect = nullptr;
     switch (bandIndex) {
     case 0: buttonToSelect = &bandSelectControls.lowBandButton; break;
-    case 1: buttonToSelect = &bandSelectControls.lowMidBandButton; break; // Новая кнопка
-    case 2: buttonToSelect = &bandSelectControls.midHighBandButton; break;// Старая midBandButton -> midHighBandButton
-    case 3: buttonToSelect = &bandSelectControls.highBandButton; break;  // Старая highBandButton
-    default:
-        jassertfalse;
-        return;
+    case 1: buttonToSelect = &bandSelectControls.lowMidBandButton; break;
+    case 2: buttonToSelect = &bandSelectControls.midHighBandButton; break;
+    case 3: buttonToSelect = &bandSelectControls.highBandButton; break;
+    default: jassertfalse; return;
     }
-
     if (buttonToSelect && !buttonToSelect->getToggleState())
     {
         buttonToSelect->setToggleState(true, juce::sendNotificationSync);
@@ -380,12 +335,12 @@ void MBRPAudioProcessorEditor::handleBandAreaClick(int bandIndex) // bandIndex 0
 
 static juce::String rangedParamToString(double value, int decimalPlaces = 0)
 {
-    // Если значение очень близко к целому, округляем
-    if (std::abs(value - std::round(value)) < 0.0001 && decimalPlaces == 0) {
+    if (std::abs(value - std::round(value)) < 0.001 && decimalPlaces == 0) {
         return juce::String(static_cast<int>(std::round(value)));
     }
     return juce::String(value, decimalPlaces);
 }
+
 
 void MBRPAudioProcessorEditor::updateReverbAttachments(int bandIndex) { // bandIndex 0..3
     juce::String wetParamId, spaceParamId, distanceParamId, delayParamId;

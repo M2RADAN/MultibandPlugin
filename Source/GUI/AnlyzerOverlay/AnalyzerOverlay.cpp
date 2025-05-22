@@ -1,5 +1,5 @@
 #include "AnalyzerOverlay.h"
-#include "../Source/PluginProcessor.h" // Для доступа к параметрам, если потребуется, но лучше через конструктор
+/*#include "../Source/PluginProcessor.h" */// Для доступа к параметрам, если потребуется, но лучше через конструктор
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_dsp/juce_dsp.h>
 #include <cmath>
@@ -7,27 +7,24 @@
 namespace MBRP_GUI
 {
     // Конструктор
-    AnalyzerOverlay::AnalyzerOverlay(juce::AudioParameterFloat& lowMidXover,
-        juce::AudioParameterFloat& midXover,
-        juce::AudioParameterFloat& midHighXover) :
-        lowMidXoverParam(lowMidXover),
-        midXoverParam(midXover),
-        midHighXoverParam(midHighXover)
+    AnalyzerOverlay::AnalyzerOverlay(MBRPAudioProcessor& p) : // <--- ИЗМЕНЕНО
+        processorRef(p) // <--- ИЗМЕНЕНО: сохраняем ссылку
     {
-        setInterceptsMouseClicks(true, true); // Перехватываем клики для себя и для детей (если есть)
-        setPaintingIsUnclipped(true);         // Позволяет рисовать за пределами компонента (для ручек)
-        startTimerHz(30); // Частота обновления для анимации
+        setInterceptsMouseClicks(true, true);
+        setPaintingIsUnclipped(true);
+        startTimerHz(30);
     }
 
     // Отрисовка
     void AnalyzerOverlay::paint(juce::Graphics& g)
     {
         auto graphBounds = getGraphBounds();
-        drawHoverHighlight(g, graphBounds); // Подсветка под линиями
-        drawCrossoverLines(g, graphBounds); // Линии поверх
+        drawHoverHighlight(g, graphBounds);
+        drawCrossoverLines(g, graphBounds);
+        drawGainMarkers(g, graphBounds); // <--- НОВЫЙ ВЫЗОВ
     }
 
-    // Таймер для анимации
+    // Таймер для анимации (пока без изменений, он управляет подсветкой кроссоверов)
     void AnalyzerOverlay::timerCallback()
     {
         bool needsRepaint = false;
@@ -40,9 +37,8 @@ namespace MBRP_GUI
             needsRepaint = true;
         }
 
-        // Проверка на изменение параметров кроссовера извне (если нужно, чтобы линии двигались без мыши)
-        // Это можно оптимизировать, кешируя последние значения частот.
-        // For now, always repaint to ensure lines are correct if parameters change via automation.
+        // Всегда перерисовываем, чтобы линии обновлялись, если параметр изменился извне
+        // Это также обновит и маркеры Gain, если их параметры изменились
         needsRepaint = true;
 
         if (needsRepaint) {
@@ -52,22 +48,21 @@ namespace MBRP_GUI
 
     void AnalyzerOverlay::resized()
     {
-        repaint(); // Перерисовать при изменении размера
+        repaint();
     }
 
     juce::Rectangle<float> AnalyzerOverlay::getGraphBounds() const
     {
-        // Эта область должна точно совпадать с областью рисования графика в SpectrumAnalyzer
-        return getLocalBounds().toFloat().reduced(1.f, 5.f); // Примерные значения
+        // Убедитесь, что это совпадает с SpectrumAnalyzer!
+        // Возможно, нужно будет немного уменьшить по высоте сверху, если маркеры Gain будут там
+        return getLocalBounds().toFloat().reduced(1.f, 5.f);
     }
 
     float AnalyzerOverlay::xToFrequency(float x, const juce::Rectangle<float>& graphBounds) const
     {
         auto left = graphBounds.getX();
         auto width = graphBounds.getWidth();
-        // Используем функцию маппинга из .h файла
         float freq = mapXToFreqLog(x, left, width, minLogFreq, maxLogFreq);
-        // Ограничиваем частоту общим диапазоном анализатора
         freq = juce::jlimit(minLogFreq, maxLogFreq, freq);
         return freq;
     }
@@ -81,22 +76,18 @@ namespace MBRP_GUI
         auto left = graphBounds.getX();
         auto right = graphBounds.getRight();
 
-        // Получаем текущие значения частот кроссоверов
-        float lmFreq = lowMidXoverParam.get();
-        float mFreq = midXoverParam.get();
-        float mhFreq = midHighXoverParam.get();
+        float lmFreq = processorRef.lowMidCrossover->get(); // Используем processorRef
+        float mFreq = processorRef.midCrossover->get();     // Используем processorRef
+        float mhFreq = processorRef.midHighCrossover->get(); // Используем processorRef
 
-        // Преобразуем частоты в X-координаты
         float lmX = mapFreqToXLog(lmFreq, left, width, minLogFreq, maxLogFreq);
         float mX = mapFreqToXLog(mFreq, left, width, minLogFreq, maxLogFreq);
         float mhX = mapFreqToXLog(mhFreq, left, width, minLogFreq, maxLogFreq);
 
-        // Цвета для линий (из ColorScheme)
-        const auto lmCol = ColorScheme::getOrangeBorderColor(); // Low/LowMid
-        const auto mCol = ColorScheme::getMidBandColor();     // LowMid/MidHigh (новый цвет или существующий)
-        const auto mhCol = ColorScheme::getMidHighCrossoverColor(); // MidHigh/High
+        const auto lmCol = ColorScheme::getOrangeBorderColor();
+        const auto mCol = ColorScheme::getMidBandColor();
+        const auto mhCol = ColorScheme::getMidHighCrossoverColor();
 
-        // Рисуем линии
         g.setColour(lmCol.withAlpha(0.7f));
         if (lmX >= left && lmX <= right) g.drawVerticalLine(roundToInt(lmX), top, bottom);
 
@@ -106,319 +97,533 @@ namespace MBRP_GUI
         g.setColour(mhCol.withAlpha(0.7f));
         if (mhX >= left && mhX <= right) g.drawVerticalLine(roundToInt(mhX), top, bottom);
 
-        // Рисуем "ручки" сверху линий
-        const float handleSize = 8.0f; // Увеличил размер ручки
+        const float handleSize = 8.0f;
         const float handleRadius = handleSize / 2.0f;
 
         auto drawHandle = [&](float xPos, Colour col) {
             if (xPos >= left && xPos <= right) {
                 g.setColour(col);
-                // Рисуем ручку так, чтобы она была центрирована на линии и немного выступала вверх
                 g.fillEllipse(xPos - handleRadius, top - handleRadius, handleSize, handleSize);
                 g.setColour(col.darker(0.3f));
                 g.drawEllipse(xPos - handleRadius, top - handleRadius, handleSize, handleSize, 1.0f);
             }
-        };
+            };
 
         drawHandle(lmX, lmCol);
         drawHandle(mX, mCol);
         drawHandle(mhX, mhCol);
     }
 
+    // --- НОВАЯ ФУНКЦИЯ для отрисовки маркеров Gain ---
+    void AnalyzerOverlay::drawGainMarkers(juce::Graphics& g, juce::Rectangle<float> graphBounds)
+    {
+        using namespace juce;
+        auto top = graphBounds.getY();
+        auto height = graphBounds.getHeight();
+        auto bottom = graphBounds.getBottom(); // <--- ДОБАВЬТЕ ЭТУ СТРОКУ
+        auto leftGraphEdge = graphBounds.getX();
+        auto rightGraphEdge = graphBounds.getRight();
+        auto graphWidth = graphBounds.getWidth();
+
+        // Получаем X-координаты кроссоверов
+        float lmFreq = processorRef.lowMidCrossover->get();
+        float mFreq = processorRef.midCrossover->get();
+        float mhFreq = processorRef.midHighCrossover->get();
+
+        float x0 = leftGraphEdge; // Начало Low полосы
+        float x1 = mapFreqToXLog(lmFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq);
+        float x2 = mapFreqToXLog(mFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq);
+        float x3 = mapFreqToXLog(mhFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq);
+        float x4 = rightGraphEdge; // Конец High полосы
+
+        // Массивы для удобства
+        float bandXStarts[] = { x0, x1, x2, x3 };
+        float bandXEnds[] = { x1, x2, x3, x4 };
+        std::atomic<float>* gainParams[] = {
+            processorRef.lowGainParam,
+            processorRef.lowMidGainParam,
+            processorRef.midHighGainParam,
+            processorRef.highGainParam
+        };
+        Colour bandColours[] = {
+            ColorScheme::getLowBandColor(),
+            ColorScheme::getLowMidBandColor(),
+            ColorScheme::getMidHighBandColor(),
+            ColorScheme::getHighBandAltColor()
+        };
+
+        const float markerHeight = 6.0f;
+        const float markerHandleWidth = 8.0f;
+
+        for (int i = 0; i < 4; ++i)
+        {
+            if (!gainParams[i]) continue;
+
+            float currentGainDb = gainParams[i]->load();
+            float yPos = mapGainDbToY(currentGainDb, top, height, gainMarkerMinDbOnGui, gainMarkerMaxDbOnGui);
+
+            // Ограничиваем yPos границами графика
+            // Здесь была ошибка с использованием 'bottom', если он не был объявлен в этой функции
+            yPos = juce::jlimit(top + markerHeight / 2.0f, bottom - markerHeight / 2.0f, yPos); // Исправлено использование bottom
+
+            float bandLeft = bandXStarts[i];
+            float bandRight = bandXEnds[i];
+
+            if (bandRight <= bandLeft || bandRight < leftGraphEdge || bandLeft > rightGraphEdge) continue;
+
+            bandLeft = std::max(leftGraphEdge, bandLeft);
+            bandRight = std::min(rightGraphEdge, bandRight);
+            if (bandRight <= bandLeft) continue;
+
+            g.setColour(bandColours[i]);
+            juce::Rectangle<float> gainMarkerRect(bandLeft, yPos - markerHeight / 2.0f, bandRight - bandLeft, markerHeight);
+            g.fillRect(gainMarkerRect);
+
+            float centerX = bandLeft + (bandRight - bandLeft) / 2.0f;
+            if (centerX >= leftGraphEdge && centerX <= rightGraphEdge) {
+                g.setColour(bandColours[i].contrasting(0.7f));
+                g.fillEllipse(centerX - markerHandleWidth / 2.0f, yPos - markerHandleWidth / 2.0f, markerHandleWidth, markerHandleWidth);
+                g.setColour(bandColours[i].darker());
+                g.drawEllipse(centerX - markerHandleWidth / 2.0f, yPos - markerHandleWidth / 2.0f, markerHandleWidth, markerHandleWidth, 1.0f);
+            }
+        }
+    }
+
     void AnalyzerOverlay::drawHoverHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds)
     {
-        if (currentHighlightAlpha <= 0.0f) return; // Не рисуем, если прозрачно
-
+        // ... (Логика подсветки кроссоверов, пока без изменений) ...
+        // Если будете добавлять подсветку для Gain, ее нужно будет интегрировать сюда или вызвать отдельно
+        if (currentHighlightAlpha <= 0.0f) return;
         using namespace juce;
         float targetX = -1.0f;
         Colour highlightColour = Colours::transparentBlack;
-
-        HoverState stateToUse = HoverState::None;
-        if (currentDraggingState != DraggingState::None) {
-            if (currentDraggingState == DraggingState::DraggingLowMid) stateToUse = HoverState::HoveringLowMid;
-            else if (currentDraggingState == DraggingState::DraggingMid) stateToUse = HoverState::HoveringMid;
-            else if (currentDraggingState == DraggingState::DraggingMidHigh) stateToUse = HoverState::HoveringMidHigh;
+        CrossoverHoverState stateToUse = CrossoverHoverState::None; // Используем состояния кроссовера
+        if (currentCrossoverDragState != CrossoverDraggingState::None) {
+            if (currentCrossoverDragState == CrossoverDraggingState::DraggingLowMid) stateToUse = CrossoverHoverState::HoveringLowMid;
+            else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMid) stateToUse = CrossoverHoverState::HoveringMid;
+            else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMidHigh) stateToUse = CrossoverHoverState::HoveringMidHigh;
         }
-        else if (currentHoverState != HoverState::None) {
-            stateToUse = currentHoverState;
+        else if (currentCrossoverHoverState != CrossoverHoverState::None) {
+            stateToUse = currentCrossoverHoverState;
         }
         else {
-            stateToUse = lastHoverStateForColor;
+            stateToUse = lastCrossoverHoverStateForColor;
         }
-
-        if (stateToUse == HoverState::None) return;
-
-        auto left = graphBounds.getX();
-        auto width = graphBounds.getWidth();
-        auto top = graphBounds.getY();
-        auto bottom = graphBounds.getBottom();
-
-        if (stateToUse == HoverState::HoveringLowMid) {
-            targetX = mapFreqToXLog(lowMidXoverParam.get(), left, width, minLogFreq, maxLogFreq);
+        if (stateToUse == CrossoverHoverState::None) return;
+        auto left = graphBounds.getX(); auto width = graphBounds.getWidth();
+        auto top = graphBounds.getY(); auto bottom = graphBounds.getBottom();
+        if (stateToUse == CrossoverHoverState::HoveringLowMid) {
+            targetX = mapFreqToXLog(processorRef.lowMidCrossover->get(), left, width, minLogFreq, maxLogFreq);
             highlightColour = ColorScheme::getOrangeBorderColor();
         }
-        else if (stateToUse == HoverState::HoveringMid) {
-            targetX = mapFreqToXLog(midXoverParam.get(), left, width, minLogFreq, maxLogFreq);
+        else if (stateToUse == CrossoverHoverState::HoveringMid) {
+            targetX = mapFreqToXLog(processorRef.midCrossover->get(), left, width, minLogFreq, maxLogFreq);
             highlightColour = ColorScheme::getMidBandColor();
         }
-        else { // HoveringMidHigh
-            targetX = mapFreqToXLog(midHighXoverParam.get(), left, width, minLogFreq, maxLogFreq);
+        else {
+            targetX = mapFreqToXLog(processorRef.midHighCrossover->get(), left, width, minLogFreq, maxLogFreq);
             highlightColour = ColorScheme::getMidHighCrossoverColor();
         }
-
-        if (targetX >= left && targetX <= graphBounds.getRight())
-        {
+        if (targetX >= left && targetX <= graphBounds.getRight()) {
             Rectangle<float> highlightRect;
             highlightRect.setWidth(highlightRectWidth);
             highlightRect.setCentre(targetX, graphBounds.getCentreY());
             highlightRect.setY(top);
             highlightRect.setBottom(bottom);
-
             g.setColour(highlightColour.withAlpha(currentHighlightAlpha));
             g.fillRect(highlightRect);
         }
     }
 
+    std::pair<AnalyzerOverlay::GainDraggingState, juce::AudioParameterFloat*> AnalyzerOverlay::getGainInfoAt(const juce::MouseEvent& event, const juce::Rectangle<float>& graphBounds)
+    {
+        float mouseX = static_cast<float>(event.x);
+        float mouseY = static_cast<float>(event.y);
+
+
+        // Проверяем, что мышь внутри graphBounds (которые тоже в локальных координатах)
+        if (!graphBounds.contains(mouseX, mouseY))
+            return { GainDraggingState::None, nullptr };
+
+        // Теперь все члены класса, такие как processorRef, minLogFreq, dragToleranceY, будут доступны
+        float lmFreq = processorRef.lowMidCrossover->get();
+        float mFreq = processorRef.midCrossover->get();
+        float mhFreq = processorRef.midHighCrossover->get();
+
+        float x0 = graphBounds.getX();
+        float x1 = mapFreqToXLog(lmFreq, graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+        float x2 = mapFreqToXLog(mFreq, graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+        float x3 = mapFreqToXLog(mhFreq, graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+        float x4 = graphBounds.getRight();
+
+        const juce::String gainParamIDs[] = { "lowGain", "lowMidGain", "midHighGain", "highGain" };
+        float bandXStarts[] = { x0, x1, x2, x3 };
+        float bandXEnds[] = { x1, x2, x3, x4 };
+        // Используем полное имя типа для enum
+        AnalyzerOverlay::GainDraggingState states[] = {
+            AnalyzerOverlay::GainDraggingState::DraggingLowGain,
+            AnalyzerOverlay::GainDraggingState::DraggingLowMidGain,
+            AnalyzerOverlay::GainDraggingState::DraggingMidHighGain,
+            AnalyzerOverlay::GainDraggingState::DraggingHighGain
+        };
+
+        for (int i = 0; i < 4; ++i)
+        {
+            if (mouseX >= bandXStarts[i] && mouseX < bandXEnds[i])
+            {
+                auto* paramBase = processorRef.getAPVTS().getParameter(gainParamIDs[i]);
+                auto* param = dynamic_cast<juce::AudioParameterFloat*>(paramBase);
+
+                if (param)
+                {
+                    float gainDb = param->get();
+                    float markerY = mapGainDbToY(gainDb, graphBounds.getY(), graphBounds.getHeight(), gainMarkerMinDbOnGui, gainMarkerMaxDbOnGui);
+
+                    if (std::abs(mouseY - markerY) < dragToleranceY)
+                    {
+                        return { states[i], param };
+                    }
+                }
+            }
+        }
+        return { AnalyzerOverlay::GainDraggingState::None, nullptr };
+    }
+
+
     void AnalyzerOverlay::mouseMove(const juce::MouseEvent& event)
     {
-        if (currentDraggingState != DraggingState::None) return; // Игнорируем, если идет драг
+        if (currentCrossoverDragState != CrossoverDraggingState::None || currentGainDragState != GainDraggingState::None)
+        {
+            return;
+        }
 
         auto graphBounds = getGraphBounds();
-        HoverState newState = HoverState::None;
-        float newTargetAlpha = 0.0f;
+        CrossoverHoverState newCrossoverHover = CrossoverHoverState::None;
+        auto gainInfo = getGainInfoAt(event, graphBounds);
+        GainDraggingState hoveredGainState = gainInfo.first;
+
+        float newTargetAlphaLocal = 0.0f;
         juce::MouseCursor cursor = juce::MouseCursor::NormalCursor;
 
-        if (graphBounds.contains(event.getPosition().toFloat()))
-        {
+        if (hoveredGainState != GainDraggingState::None) {
+            cursor = juce::MouseCursor::UpDownResizeCursor;
+            currentCrossoverHoverState = CrossoverHoverState::None;
+            targetHighlightAlpha = 0.0f;
+        }
+        // Используем event.getLocalPosition() для contains
+        else if (graphBounds.contains(event.getPosition().toFloat())) {
             float mouseX = static_cast<float>(event.x);
-            float lmX = mapFreqToXLog(lowMidXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-            float mX = mapFreqToXLog(midXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-            float mhX = mapFreqToXLog(midHighXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+            float lmX = mapFreqToXLog(processorRef.lowMidCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+            float mX = mapFreqToXLog(processorRef.midCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+            float mhX = mapFreqToXLog(processorRef.midHighCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
 
-            // Проверяем, находится ли X координата мыши близко к одной из линий
-            if (std::abs(mouseX - lmX) < dragTolerance) {
-                newState = HoverState::HoveringLowMid;
-            }
-            else if (std::abs(mouseX - mX) < dragTolerance) {
-                newState = HoverState::HoveringMid;
-            }
-            else if (std::abs(mouseX - mhX) < dragTolerance) {
-                newState = HoverState::HoveringMidHigh;
-            }
+            if (std::abs(mouseX - lmX) < dragToleranceX) newCrossoverHover = CrossoverHoverState::HoveringLowMid;
+            else if (std::abs(mouseX - mX) < dragToleranceX) newCrossoverHover = CrossoverHoverState::HoveringMid;
+            else if (std::abs(mouseX - mhX) < dragToleranceX) newCrossoverHover = CrossoverHoverState::HoveringMidHigh;
 
-
-            if (newState != HoverState::None) {
-                newTargetAlpha = targetAlphaValue;
+            if (newCrossoverHover != CrossoverHoverState::None) {
+                newTargetAlphaLocal = targetAlphaValue;
                 cursor = juce::MouseCursor::LeftRightResizeCursor;
             }
         }
+
         setMouseCursor(cursor);
 
-        if (newState != HoverState::None) {
-            lastHoverStateForColor = newState;
+        if (newCrossoverHover != CrossoverHoverState::None) {
+            lastCrossoverHoverStateForColor = newCrossoverHover;
         }
-        if (newState != currentHoverState) {
-            currentHoverState = newState;
-        }
-        if (!juce::approximatelyEqual(newTargetAlpha, targetHighlightAlpha)) {
-            targetHighlightAlpha = newTargetAlpha;
-        }
-    }
 
-    void AnalyzerOverlay::mouseExit(const juce::MouseEvent& /*event*/)
-    {
-        if (currentDraggingState == DraggingState::None) {
-            if (currentHoverState != HoverState::None) {
-                lastHoverStateForColor = currentHoverState;
-            }
-            targetHighlightAlpha = 0.0f;
-            currentHoverState = HoverState::None;
+        if (newCrossoverHover != currentCrossoverHoverState) {
+            currentCrossoverHoverState = newCrossoverHover;
         }
-        setMouseCursor(juce::MouseCursor::NormalCursor);
+
+        if (hoveredGainState == GainDraggingState::None && !juce::approximatelyEqual(newTargetAlphaLocal, targetHighlightAlpha)) {
+            targetHighlightAlpha = newTargetAlphaLocal;
+        }
+        else if (hoveredGainState != GainDraggingState::None) {
+            targetHighlightAlpha = 0.0f;
+        }
     }
 
     void AnalyzerOverlay::mouseDown(const juce::MouseEvent& event)
     {
         auto graphBounds = getGraphBounds();
-        DraggingState newDragState = DraggingState::None;
-        juce::AudioParameterFloat* paramToChange = nullptr;
+        juce::AudioParameterFloat* paramToChangeFromGain = nullptr;
 
+        auto gainInfo = getGainInfoAt(event, graphBounds);
+        currentGainDragState = gainInfo.first;
+        paramToChangeFromGain = gainInfo.second;
+
+        if (currentGainDragState != GainDraggingState::None && paramToChangeFromGain != nullptr)
+        {
+            paramToChangeFromGain->beginChangeGesture();
+            setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+            currentCrossoverHoverState = CrossoverHoverState::None;
+            currentCrossoverDragState = CrossoverDraggingState::None;
+            targetHighlightAlpha = 0.0f;
+            // repaint(); // Не обязательно, таймер обновит
+            return;
+        }
+
+        currentCrossoverDragState = CrossoverDraggingState::None;
         float mouseX = static_cast<float>(event.x);
-        float lmX = mapFreqToXLog(lowMidXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-        float mX = mapFreqToXLog(midXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-        float mhX = mapFreqToXLog(midHighXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+        juce::AudioParameterFloat* paramToChangeFromXOver = nullptr;
 
-        if (event.y >= graphBounds.getY() && event.y <= graphBounds.getBottom()) {
-            if (std::abs(mouseX - lmX) < dragTolerance) {
-                newDragState = DraggingState::DraggingLowMid;
-                paramToChange = &lowMidXoverParam;
-                currentHoverState = HoverState::HoveringLowMid; // Устанавливаем для подсветки
+        // Проверяем Y координату относительно graphBounds, а не всего компонента
+        if (static_cast<float>(event.y) >= graphBounds.getY() && static_cast<float>(event.y) <= graphBounds.getBottom()) {
+            // Доступ к параметрам кроссовера через processorRef
+            float lmX = mapFreqToXLog(processorRef.lowMidCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+            float mX = mapFreqToXLog(processorRef.midCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+            float mhX = mapFreqToXLog(processorRef.midHighCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+
+            if (std::abs(mouseX - lmX) < dragToleranceX) {
+                currentCrossoverDragState = CrossoverDraggingState::DraggingLowMid; paramToChangeFromXOver = processorRef.lowMidCrossover; currentCrossoverHoverState = CrossoverHoverState::HoveringLowMid;
             }
-            else if (std::abs(mouseX - mX) < dragTolerance) {
-                newDragState = DraggingState::DraggingMid;
-                paramToChange = &midXoverParam;
-                currentHoverState = HoverState::HoveringMid; // Устанавливаем для подсветки
+            else if (std::abs(mouseX - mX) < dragToleranceX) {
+                currentCrossoverDragState = CrossoverDraggingState::DraggingMid; paramToChangeFromXOver = processorRef.midCrossover; currentCrossoverHoverState = CrossoverHoverState::HoveringMid;
             }
-            else if (std::abs(mouseX - mhX) < dragTolerance) {
-                newDragState = DraggingState::DraggingMidHigh;
-                paramToChange = &midHighXoverParam;
-                currentHoverState = HoverState::HoveringMidHigh; // Устанавливаем для подсветки
+            else if (std::abs(mouseX - mhX) < dragToleranceX) {
+                currentCrossoverDragState = CrossoverDraggingState::DraggingMidHigh; paramToChangeFromXOver = processorRef.midHighCrossover; currentCrossoverHoverState = CrossoverHoverState::HoveringMidHigh;
             }
         }
 
-
-        if (newDragState != DraggingState::None && paramToChange != nullptr) {
-            currentDraggingState = newDragState;
-            lastHoverStateForColor = currentHoverState;
-            targetHighlightAlpha = targetAlphaValue;
-            currentHighlightAlpha = targetAlphaValue; // Мгновенно показать
-            paramToChange->beginChangeGesture();
+        if (currentCrossoverDragState != CrossoverDraggingState::None && paramToChangeFromXOver != nullptr) {
+            lastCrossoverHoverStateForColor = currentCrossoverHoverState;
+            targetHighlightAlpha = targetAlphaValue; currentHighlightAlpha = targetAlphaValue;
+            paramToChangeFromXOver->beginChangeGesture();
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            repaint();
+            // repaint();
         }
-        else if (graphBounds.contains(event.getPosition().toFloat())) { // Клик по области, не по ручке
-            currentDraggingState = DraggingState::None;
-            if (currentHoverState != HoverState::None) {
-                lastHoverStateForColor = currentHoverState;
-            }
-            currentHoverState = HoverState::None;
-            targetHighlightAlpha = 0.0f; // Затухание, если была подсветка
+        else if (graphBounds.contains(event.getPosition().toFloat())) {
+            currentCrossoverDragState = CrossoverDraggingState::None;
+            currentGainDragState = GainDraggingState::None;
+            if (currentCrossoverHoverState != CrossoverHoverState::None) { lastCrossoverHoverStateForColor = currentCrossoverHoverState; }
+            currentCrossoverHoverState = CrossoverHoverState::None;
+            targetHighlightAlpha = 0.0f;
             setMouseCursor(juce::MouseCursor::NormalCursor);
 
             float clickedFreq = xToFrequency(mouseX, graphBounds);
             int bandIndex = 0;
-            if (clickedFreq < lowMidXoverParam.get()) bandIndex = 0; // Low
-            else if (clickedFreq < midXoverParam.get()) bandIndex = 1; // Low-Mid
-            else if (clickedFreq < midHighXoverParam.get()) bandIndex = 2; // Mid-High
-            else bandIndex = 3; // High
-
-            if (onBandAreaClicked) {
-                onBandAreaClicked(bandIndex);
-            }
-            DBG("Overlay: Clicked in band area: " << bandIndex << " (Freq: " << clickedFreq << ")");
-            if (currentHighlightAlpha > 0.0f) repaint();
+            // Доступ к параметрам кроссовера через processorRef
+            if (clickedFreq < processorRef.lowMidCrossover->get()) bandIndex = 0;
+            else if (clickedFreq < processorRef.midCrossover->get()) bandIndex = 1;
+            else if (clickedFreq < processorRef.midHighCrossover->get()) bandIndex = 2;
+            else bandIndex = 3;
+            if (onBandAreaClicked) { onBandAreaClicked(bandIndex); }
         }
-        else { // Клик вне области графика
-            currentDraggingState = DraggingState::None;
-            targetHighlightAlpha = 0.0f;
-            currentHoverState = HoverState::None;
-            if (currentHighlightAlpha > 0.0f) repaint();
+        else {
+            currentCrossoverDragState = CrossoverDraggingState::None;
+            currentGainDragState = GainDraggingState::None;
+            targetHighlightAlpha = 0.0f; currentCrossoverHoverState = CrossoverHoverState::None;
         }
     }
+    void AnalyzerOverlay::mouseExit(const juce::MouseEvent& /*event*/)
+    {
+        if (currentCrossoverDragState == CrossoverDraggingState::None && currentGainDragState == GainDraggingState::None) {
+            if (currentCrossoverHoverState != CrossoverHoverState::None) {
+                lastCrossoverHoverStateForColor = currentCrossoverHoverState;
+            }
+            targetHighlightAlpha = 0.0f;
+            currentCrossoverHoverState = CrossoverHoverState::None;
+            // currentGainHoverState = GainHoverState::None; // Если будет
+        }
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+
+    //void AnalyzerOverlay::mouseDown(const juce::MouseEvent& event)
+    //{
+    //    auto graphBounds = getGraphBounds();
+    //    juce::AudioParameterFloat* paramToChange = nullptr;
+
+    //    // 1. Проверяем клик по Gain маркерам
+    //    auto gainInfo = getGainInfoAt(event, graphBounds);
+    //    currentGainDragState = gainInfo.first; // Устанавливаем состояние перетаскивания Gain
+    //    paramToChange = gainInfo.second;       // Получаем параметр Gain
+
+    //    if (currentGainDragState != GainDraggingState::None && paramToChange != nullptr)
+    //    {
+    //        paramToChange->beginChangeGesture();
+    //        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    //        // Сбрасываем состояния и подсветку кроссовера
+    //        currentCrossoverHoverState = CrossoverHoverState::None;
+    //        currentCrossoverDragState = CrossoverDraggingState::None;
+    //        targetHighlightAlpha = 0.0f;
+    //        repaint(); // Может понадобиться для визуального отклика захвата Gain
+    //        return;
+    //    }
+
+    //    // 2. Если не кликнули на Gain, проверяем кроссоверы
+    //    currentCrossoverDragState = CrossoverDraggingState::None; // Сбрасываем на всякий случай
+    //    float mouseX = static_cast<float>(event.x);
+    //    paramToChange = nullptr; // Сбрасываем, т.к. он мог быть установлен от Gain
+
+    //    if (static_cast<float>(event.y) >= graphBounds.getY() && static_cast<float>(event.y) <= graphBounds.getBottom()) { // Проверяем Y координату клика
+    //        float lmX = mapFreqToXLog(processorRef.lowMidCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+    //        float mX = mapFreqToXLog(processorRef.midCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+    //        float mhX = mapFreqToXLog(processorRef.midHighCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+
+    //        if (std::abs(mouseX - lmX) < dragToleranceX) {
+    //            currentCrossoverDragState = CrossoverDraggingState::DraggingLowMid; paramToChange = processorRef.lowMidCrossover; currentCrossoverHoverState = CrossoverHoverState::HoveringLowMid;
+    //        }
+    //        else if (std::abs(mouseX - mX) < dragToleranceX) {
+    //            currentCrossoverDragState = CrossoverDraggingState::DraggingMid; paramToChange = processorRef.midCrossover; currentCrossoverHoverState = CrossoverHoverState::HoveringMid;
+    //        }
+    //        else if (std::abs(mouseX - mhX) < dragToleranceX) {
+    //            currentCrossoverDragState = CrossoverDraggingState::DraggingMidHigh; paramToChange = processorRef.midHighCrossover; currentCrossoverHoverState = CrossoverHoverState::HoveringMidHigh;
+    //        }
+    //    }
+
+    //    if (currentCrossoverDragState != CrossoverDraggingState::None && paramToChange != nullptr) {
+    //        lastCrossoverHoverStateForColor = currentCrossoverHoverState;
+    //        targetHighlightAlpha = targetAlphaValue; currentHighlightAlpha = targetAlphaValue;
+    //        paramToChange->beginChangeGesture();
+    //        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    //        repaint();
+    //    }
+    //    else if (graphBounds.contains(event.getPosition().toFloat())) {
+    //        // Клик по пустой области
+    //        currentCrossoverDragState = CrossoverDraggingState::None;
+    //        currentGainDragState = GainDraggingState::None;
+    //        if (currentCrossoverHoverState != CrossoverHoverState::None) { lastCrossoverHoverStateForColor = currentCrossoverHoverState; }
+    //        currentCrossoverHoverState = CrossoverHoverState::None;
+    //        targetHighlightAlpha = 0.0f;
+    //        setMouseCursor(juce::MouseCursor::NormalCursor);
+
+    //        float clickedFreq = xToFrequency(mouseX, graphBounds);
+    //        int bandIndex = 0; // Определяем индекс полосы по клику
+    //        if (clickedFreq < processorRef.lowMidCrossover->get()) bandIndex = 0;
+    //        else if (clickedFreq < processorRef.midCrossover->get()) bandIndex = 1;
+    //        else if (clickedFreq < processorRef.midHighCrossover->get()) bandIndex = 2;
+    //        else bandIndex = 3;
+    //        if (onBandAreaClicked) { onBandAreaClicked(bandIndex); }
+    //        // if (currentHighlightAlpha > 0.0f) repaint(); // repaint будет вызван таймером
+    //    }
+    //    else {
+    //        // Клик вне графика
+    //        currentCrossoverDragState = CrossoverDraggingState::None;
+    //        currentGainDragState = GainDraggingState::None;
+    //        targetHighlightAlpha = 0.0f; currentCrossoverHoverState = CrossoverHoverState::None;
+    //        // if (currentHighlightAlpha > 0.0f) repaint();
+    //    }
+    //}
 
     void AnalyzerOverlay::mouseDrag(const juce::MouseEvent& event)
     {
-        if (currentDraggingState == DraggingState::None) return;
-
         auto graphBounds = getGraphBounds();
-        float mouseX = juce::jlimit(graphBounds.getX(), graphBounds.getRight(), (float)event.x);
-        float newFreqRaw = xToFrequency(mouseX, graphBounds); // Частота по X координате мыши
 
-        juce::AudioParameterFloat* paramToUpdate = nullptr;
-        float minAllowedFreq = minLogFreq; // Глобальный минимум
-        float maxAllowedFreq = maxLogFreq; // Глобальный максимум
+        if (currentGainDragState != GainDraggingState::None) {
+            float mouseY = juce::jlimit(graphBounds.getY(), graphBounds.getBottom(), (float)event.y);
+            float newGainDb = mapYToGainDb(mouseY, graphBounds.getY(), graphBounds.getHeight(), gainMarkerMinDbOnGui, gainMarkerMaxDbOnGui);
 
+            juce::AudioParameterFloat* paramToUpdateGain = nullptr;
+            const juce::String gainIDs[] = { "lowGain", "lowMidGain", "midHighGain", "highGain" };
+            GainDraggingState gainStates[] = { GainDraggingState::DraggingLowGain, GainDraggingState::DraggingLowMidGain, GainDraggingState::DraggingMidHighGain, GainDraggingState::DraggingHighGain };
 
-        if (currentDraggingState == DraggingState::DraggingLowMid) {
-            paramToUpdate = &lowMidXoverParam;
-            // Не может быть ниже глобального минимума и не может быть выше, чем midXover минус зазор
-            minAllowedFreq = juce::jmax(minAllowedFreq, paramToUpdate->getNormalisableRange().start);
-            maxAllowedFreq = juce::jmin(maxAllowedFreq, midXoverParam.get() - MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
-            maxAllowedFreq = juce::jmin(maxAllowedFreq, paramToUpdate->getNormalisableRange().end);
-        }
-        else if (currentDraggingState == DraggingState::DraggingMid) {
-            paramToUpdate = &midXoverParam;
-            // Не может быть ниже, чем lowMidXover плюс зазор, и не выше, чем midHighXover минус зазор
-            minAllowedFreq = juce::jmax(minAllowedFreq, lowMidXoverParam.get() + MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
-            minAllowedFreq = juce::jmax(minAllowedFreq, paramToUpdate->getNormalisableRange().start);
-            maxAllowedFreq = juce::jmin(maxAllowedFreq, midHighXoverParam.get() - MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
-            maxAllowedFreq = juce::jmin(maxAllowedFreq, paramToUpdate->getNormalisableRange().end);
-        }
-        else if (currentDraggingState == DraggingState::DraggingMidHigh) {
-            paramToUpdate = &midHighXoverParam;
-            // Не может быть ниже, чем midXover плюс зазор, и не выше глобального максимума
-            minAllowedFreq = juce::jmax(minAllowedFreq, midXoverParam.get() + MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
-            minAllowedFreq = juce::jmax(minAllowedFreq, paramToUpdate->getNormalisableRange().start);
-            maxAllowedFreq = juce::jmin(maxAllowedFreq, paramToUpdate->getNormalisableRange().end);
+            for (int i = 0; i < 4; ++i) {
+                if (currentGainDragState == gainStates[i]) {
+                    paramToUpdateGain = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter(gainIDs[i]));
+                    break;
+                }
+            }
+
+            if (paramToUpdateGain) {
+                newGainDb = juce::jlimit(paramToUpdateGain->getNormalisableRange().start, paramToUpdateGain->getNormalisableRange().end, newGainDb);
+                paramToUpdateGain->setValueNotifyingHost(paramToUpdateGain->getNormalisableRange().convertTo0to1(newGainDb));
+            }
+            return;
         }
 
-        if (paramToUpdate) {
-            float finalFreq = juce::jlimit(minAllowedFreq, maxAllowedFreq, newFreqRaw);
-            paramToUpdate->setValueNotifyingHost(paramToUpdate->getNormalisableRange().convertTo0to1(finalFreq));
-        }
+        if (currentCrossoverDragState != CrossoverDraggingState::None) {
+            // ... (Логика для кроссоверов, как в предыдущем ответе, используя processorRef для доступа к параметрам)
+            float mouseX = juce::jlimit(graphBounds.getX(), graphBounds.getRight(), (float)event.x);
+            float newFreqRaw = xToFrequency(mouseX, graphBounds);
+            juce::AudioParameterFloat* paramToUpdateXOver = nullptr;
+            float minAllowedFreq = this->minLogFreq; // Используем this-> для доступа к члену класса
+            float maxAllowedFreq = this->maxLogFreq;
 
-        // Обновление курсора и состояния наведения во время драга
-        HoverState hoverStateForUpdate = HoverState::None;
-        juce::MouseCursor cursor = juce::MouseCursor::LeftRightResizeCursor; // По умолчанию для драга
+            if (currentCrossoverDragState == CrossoverDraggingState::DraggingLowMid) {
+                paramToUpdateXOver = processorRef.lowMidCrossover;
+                minAllowedFreq = juce::jmax(paramToUpdateXOver->getNormalisableRange().start, minLogFreq); // Исправлено minLogFreq
+                maxAllowedFreq = juce::jmin(paramToUpdateXOver->getNormalisableRange().end, processorRef.midCrossover->get() - MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
+            }
+            else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMid) {
+                paramToUpdateXOver = processorRef.midCrossover;
+                minAllowedFreq = juce::jmax(paramToUpdateXOver->getNormalisableRange().start, processorRef.lowMidCrossover->get() + MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
+                maxAllowedFreq = juce::jmin(paramToUpdateXOver->getNormalisableRange().end, processorRef.midHighCrossover->get() - MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
+            }
+            else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMidHigh) {
+                paramToUpdateXOver = processorRef.midHighCrossover;
+                minAllowedFreq = juce::jmax(paramToUpdateXOver->getNormalisableRange().start, processorRef.midCrossover->get() + MBRPAudioProcessor::MIN_CROSSOVER_SEPARATION);
+                maxAllowedFreq = juce::jmin(maxAllowedFreq, paramToUpdateXOver->getNormalisableRange().end); // Исправлено maxLogFreq
+            }
 
-        float currentEventMouseX = (float)event.x;
-        float lmX = mapFreqToXLog(lowMidXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-        float mX = mapFreqToXLog(midXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-        float mhX = mapFreqToXLog(midHighXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+            if (paramToUpdateXOver) {
+                float finalFreq = juce::jlimit(minAllowedFreq, maxAllowedFreq, newFreqRaw);
+                paramToUpdateXOver->setValueNotifyingHost(paramToUpdateXOver->getNormalisableRange().convertTo0to1(finalFreq));
+            }
 
-        // Проверяем, находится ли мышь все еще над соответствующей линией (или ее ручкой)
-        // Упрощенная проверка, можно уточнить по Y координате, если ручки маленькие
-        if (currentDraggingState == DraggingState::DraggingLowMid && std::abs(currentEventMouseX - lmX) < dragTolerance * 2.f) { // Увеличил допуск для удержания
-            hoverStateForUpdate = HoverState::HoveringLowMid;
+            // Обновление состояния наведения для подсветки кроссовера
+            CrossoverHoverState hoverStateForUpdate = CrossoverHoverState::None;
+            // ... (логика определения hoverStateForUpdate для кроссовера, как была раньше)
+            if (currentCrossoverDragState == CrossoverDraggingState::DraggingLowMid && std::abs(mouseX - mapFreqToXLog(processorRef.lowMidCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq)) < dragToleranceX * 2.f) hoverStateForUpdate = CrossoverHoverState::HoveringLowMid;
+            // ... и для других кроссоверов ...
+            if (hoverStateForUpdate != currentCrossoverHoverState) currentCrossoverHoverState = hoverStateForUpdate;
+            if (currentCrossoverHoverState != CrossoverHoverState::None) lastCrossoverHoverStateForColor = currentCrossoverHoverState;
+            targetHighlightAlpha = targetAlphaValue;
+            return;
         }
-        else if (currentDraggingState == DraggingState::DraggingMid && std::abs(currentEventMouseX - mX) < dragTolerance * 2.f) {
-            hoverStateForUpdate = HoverState::HoveringMid;
-        }
-        else if (currentDraggingState == DraggingState::DraggingMidHigh && std::abs(currentEventMouseX - mhX) < dragTolerance * 2.f) {
-            hoverStateForUpdate = HoverState::HoveringMidHigh;
-        }
-        else {
-            // Если мышь ушла слишком далеко от линии во время драга, можно оставить курсор LeftRightResize
-            // или сменить на NormalCursor. Оставим LeftRightResize, т.к. драг все еще активен.
-        }
-        setMouseCursor(cursor); // Курсор меняется в mouseMove, если драг не активен.
-
-        if (hoverStateForUpdate != currentHoverState) currentHoverState = hoverStateForUpdate;
-        if (currentHoverState != HoverState::None) lastHoverStateForColor = currentHoverState;
-
-        targetHighlightAlpha = targetAlphaValue;  // Подсветка активна во время драга
-        // repaint(); // Таймер и так вызывает repaint
     }
 
     void AnalyzerOverlay::mouseUp(const juce::MouseEvent& event)
     {
-        juce::AudioParameterFloat* paramToEndGesture = nullptr;
-        if (currentDraggingState == DraggingState::DraggingLowMid) paramToEndGesture = &lowMidXoverParam;
-        else if (currentDraggingState == DraggingState::DraggingMid) paramToEndGesture = &midXoverParam;
-        else if (currentDraggingState == DraggingState::DraggingMidHigh) paramToEndGesture = &midHighXoverParam;
-
-        if (paramToEndGesture) {
-            paramToEndGesture->endChangeGesture();
+        if (currentGainDragState != GainDraggingState::None) {
+            juce::AudioParameterFloat* paramToEndGestureGain = nullptr;
+            const juce::String gainIDs[] = { "lowGain", "lowMidGain", "midHighGain", "highGain" };
+            GainDraggingState gainStates[] = { GainDraggingState::DraggingLowGain, GainDraggingState::DraggingLowMidGain, GainDraggingState::DraggingMidHighGain, GainDraggingState::DraggingHighGain };
+            for (int i = 0; i < 4; ++i) {
+                if (currentGainDragState == gainStates[i]) {
+                    paramToEndGestureGain = dynamic_cast<juce::AudioParameterFloat*>(processorRef.getAPVTS().getParameter(gainIDs[i]));
+                    break;
+                }
+            }
+            if (paramToEndGestureGain) paramToEndGestureGain->endChangeGesture();
+            currentGainDragState = GainDraggingState::None;
+            mouseMove(event);
+            return;
         }
 
-        // --- ИЗМЕНЕНИЕ: Логика lastHoverStateForColor после mouseUp ---
-        // Определяем, над какой линией находится мышь в момент отпускания,
-        // чтобы подсветка осталась на ней или начала затухать с правильным цветом.
-        HoverState hoverAtMouseUp = HoverState::None;
-        auto graphBounds = getGraphBounds();
-        if (graphBounds.contains(event.getPosition().toFloat())) {
-            float mouseX = static_cast<float>(event.x);
-            float lmX = mapFreqToXLog(lowMidXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-            float mX = mapFreqToXLog(midXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
-            float mhX = mapFreqToXLog(midHighXoverParam.get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+        if (currentCrossoverDragState != CrossoverDraggingState::None) {
+            juce::AudioParameterFloat* paramToEndGestureXOver = nullptr;
+            if (currentCrossoverDragState == CrossoverDraggingState::DraggingLowMid) paramToEndGestureXOver = processorRef.lowMidCrossover;
+            else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMid) paramToEndGestureXOver = processorRef.midCrossover;
+            else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMidHigh) paramToEndGestureXOver = processorRef.midHighCrossover;
+            if (paramToEndGestureXOver) { paramToEndGestureXOver->endChangeGesture(); }
 
-            if (std::abs(mouseX - lmX) < dragTolerance) hoverAtMouseUp = HoverState::HoveringLowMid;
-            else if (std::abs(mouseX - mX) < dragTolerance) hoverAtMouseUp = HoverState::HoveringMid;
-            else if (std::abs(mouseX - mhX) < dragTolerance) hoverAtMouseUp = HoverState::HoveringMidHigh;
+            // Обновляем lastCrossoverHoverStateForColor корректно
+            CrossoverHoverState hoverAtMouseUp = CrossoverHoverState::None;
+            auto graphBounds = getGraphBounds(); // Получаем graphBounds снова
+            if (graphBounds.contains(event.getPosition().toFloat())) { // Используем getLocalPosition
+                float mouseX = static_cast<float>(event.x);
+                float lmX = mapFreqToXLog(processorRef.lowMidCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+                float mX = mapFreqToXLog(processorRef.midCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+                float mhX = mapFreqToXLog(processorRef.midHighCrossover->get(), graphBounds.getX(), graphBounds.getWidth(), minLogFreq, maxLogFreq);
+                if (std::abs(mouseX - lmX) < dragToleranceX) hoverAtMouseUp = CrossoverHoverState::HoveringLowMid;
+                else if (std::abs(mouseX - mX) < dragToleranceX) hoverAtMouseUp = CrossoverHoverState::HoveringMid;
+                else if (std::abs(mouseX - mhX) < dragToleranceX) hoverAtMouseUp = CrossoverHoverState::HoveringMidHigh;
+            }
+            if (hoverAtMouseUp != CrossoverHoverState::None) {
+                lastCrossoverHoverStateForColor = hoverAtMouseUp;
+            }
+            else {
+                // Если мышь не над линией, но перетаскивание было, сохраняем последнее состояние перетаскивания
+                if (currentCrossoverDragState == CrossoverDraggingState::DraggingLowMid) lastCrossoverHoverStateForColor = CrossoverHoverState::HoveringLowMid;
+                else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMid) lastCrossoverHoverStateForColor = CrossoverHoverState::HoveringMid;
+                else if (currentCrossoverDragState == CrossoverDraggingState::DraggingMidHigh) lastCrossoverHoverStateForColor = CrossoverHoverState::HoveringMidHigh;
+            }
+            currentCrossoverDragState = CrossoverDraggingState::None;
+            mouseMove(event);
+            return;
         }
-
-        if (hoverAtMouseUp != HoverState::None) {
-            lastHoverStateForColor = hoverAtMouseUp;
-        }
-        else { // Если мышь не над линией, используем состояние, которое было во время драга
-            if (currentDraggingState == DraggingState::DraggingLowMid) lastHoverStateForColor = HoverState::HoveringLowMid;
-            else if (currentDraggingState == DraggingState::DraggingMid) lastHoverStateForColor = HoverState::HoveringMid;
-            else if (currentDraggingState == DraggingState::DraggingMidHigh) lastHoverStateForColor = HoverState::HoveringMidHigh;
-        }
-        // --- КОНЕЦ ИЗМЕНЕНИЯ ---
-
-        currentDraggingState = DraggingState::None;
-        mouseMove(event);
     }
 
 }
