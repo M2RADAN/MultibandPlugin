@@ -42,7 +42,7 @@ namespace MBRP_GUI
     {
     public:
         AnalyzerOverlay(MBRPAudioProcessor& p);
-        ~AnalyzerOverlay() override = default;
+        ~AnalyzerOverlay() override;
 
         void paint(juce::Graphics& g) override;
         void resized() override;
@@ -64,6 +64,8 @@ namespace MBRP_GUI
         void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<float> graphBounds);
         void drawHoverHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds);
         void drawGainMarkersAndActiveBandHighlight(juce::Graphics& g, juce::Rectangle<float> graphBounds);
+
+        void positionBandControls(const juce::Rectangle<float>& graphBounds);
 
         float xToFrequency(float x, const juce::Rectangle<float>& graphBounds) const;
         juce::Rectangle<float> getGraphBounds() const;
@@ -112,6 +114,15 @@ namespace MBRP_GUI
         // Давайте сделаем задержку в 1 секунду (30 кадров)
         static const int POPUP_HIDE_DELAY_TOTAL_FRAMES = 10;
 
+        static constexpr int numBands = 4;
+        juce::TextButton soloButtons[numBands];
+        juce::TextButton muteButtons[numBands];
+        juce::TextButton bypassButtons[numBands]; // Если решите добавить и Bypass сюда
+
+        using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+        std::unique_ptr<ButtonAttachment> soloAttachments[numBands];
+        std::unique_ptr<ButtonAttachment> muteAttachments[numBands];
+        std::unique_ptr<ButtonAttachment> bypassAttachments[numBands];
 
         void showGainPopup(const juce::MouseEvent* eventForPosition, float valueDb); // Передаем MouseEvent для позиции
         void hideGainPopup();

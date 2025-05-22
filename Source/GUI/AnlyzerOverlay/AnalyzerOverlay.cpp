@@ -14,6 +14,39 @@ namespace MBRP_GUI
         setInterceptsMouseClicks(true, true);
         setPaintingIsUnclipped(true);
         startTimerHz(30);
+
+        const juce::String soloParamIDs[] = { "lowSolo", "lowMidSolo", "midHighSolo", "highSolo" };
+        const juce::String muteParamIDs[] = { "lowMute", "lowMidMute", "midHighMute", "highMute" };
+        const juce::String bypassParamIDs[] = { "lowBypass", "lowMidBypass", "midHighBypass", "highBypass" }; // <--- НОВОЕ
+
+        for (int i = 0; i < numBands; ++i)
+        {
+            soloButtons[i].setButtonText("S");
+            soloButtons[i].setClickingTogglesState(true);
+            addAndMakeVisible(soloButtons[i]);
+            soloAttachments[i] = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), soloParamIDs[i], soloButtons[i]);
+            soloButtons[i].setTooltip("Solo Band " + juce::String(i + 1)); // Или более осмысленные имена полос
+
+            muteButtons[i].setButtonText("M");
+            muteButtons[i].setClickingTogglesState(true);
+            addAndMakeVisible(muteButtons[i]);
+            muteAttachments[i] = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), muteParamIDs[i], muteButtons[i]);
+            muteButtons[i].setTooltip("Mute Band " + juce::String(i + 1));
+
+            // --- НОВОЕ: Bypass кнопки для каждой полосы ---
+            bypassButtons[i].setButtonText("B");
+            bypassButtons[i].setClickingTogglesState(true);
+            addAndMakeVisible(bypassButtons[i]);
+            bypassAttachments[i] = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), bypassParamIDs[i], bypassButtons[i]);
+            bypassButtons[i].setTooltip("Bypass Band " + juce::String(i + 1) + " Effects");
+            // ---------------------------------------------
+
+            // Все кнопки видимы всегда
+            soloButtons[i].setVisible(true);
+            muteButtons[i].setVisible(true);
+            bypassButtons[i].setVisible(true); // <--- НОВОЕ
+        }
+
         gainPopupDisplay.setColour(juce::Label::backgroundColourId, juce::Colours::darkgrey.withAlpha(0.85f));
         gainPopupDisplay.setColour(juce::Label::textColourId, juce::Colours::white);
         gainPopupDisplay.setColour(juce::Label::outlineColourId, juce::Colours::lightgrey);
@@ -25,9 +58,18 @@ namespace MBRP_GUI
 
     }
 
+    AnalyzerOverlay::~AnalyzerOverlay()
+    {
+        for (int i = 0; i < numBands; ++i) {
+            soloAttachments[i].reset();
+            muteAttachments[i].reset();
+            bypassAttachments[i].reset(); // <--- НОВОЕ
+        }
+    }
+
     void AnalyzerOverlay::setActiveBand(int bandIndex)
     {
-        if (bandIndex >= 0 && bandIndex < 4)
+        if (bandIndex >= 0 && bandIndex < numBands)
         {
             activeBandIndex = bandIndex;
             repaint(); // Перерисовать, чтобы обновить подсветку
@@ -81,7 +123,76 @@ namespace MBRP_GUI
     void AnalyzerOverlay::resized()
     {
         repaint();
+        positionBandControls(getGraphBounds());
     }
+
+    void AnalyzerOverlay::positionBandControls(const juce::Rectangle<float>& graphBounds)
+    {
+        auto leftGraphEdge = graphBounds.getX();
+        auto graphWidth = graphBounds.getWidth();
+
+        // Позиция кнопок (например, вверху каждой полосы)
+        float buttonY = graphBounds.getY() + 3.0f; // Небольшой отступ сверху
+        int buttonWidth = 18;  // Маленький размер для кнопок
+        int buttonHeight = 16; //
+        int buttonSpacing = 2;  // Расстояние между кнопками S, M, B
+
+        float lmFreq = processorRef.lowMidCrossover->get();
+        float mFreq = processorRef.midCrossover->get();
+        float mhFreq = processorRef.midHighCrossover->get();
+
+        float x_coords[] = {
+            leftGraphEdge,
+            mapFreqToXLog(lmFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            mapFreqToXLog(mFreq,  leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            mapFreqToXLog(mhFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            graphBounds.getRight()
+        };
+
+        for (int i = 0; i < numBands; ++i)
+        {
+            float bandLeftX = x_coords[i];
+            float bandRightX = x_coords[i + 1];
+
+            bool canShowButtons = true;
+            if (bandRightX <= bandLeftX || bandRightX < leftGraphEdge || bandLeftX > graphBounds.getRight()) {
+                canShowButtons = false;
+            }
+            bandLeftX = std::max(leftGraphEdge, bandLeftX);
+            bandRightX = std::min(graphBounds.getRight(), bandRightX);
+            if (bandRightX <= bandLeftX) {
+                canShowButtons = false;
+            }
+
+            float bandWidthCurrent = bandRightX - bandLeftX;
+            float totalButtonsWidth = buttonWidth * 3 + buttonSpacing * 2;
+
+            if (bandWidthCurrent < totalButtonsWidth + 4) { // + небольшой запас
+                canShowButtons = false; // Слишком узкая полоса для кнопок
+            }
+
+            if (canShowButtons) {
+                // Позиционируем кнопки S, M, B рядом друг с другом
+                // Например, центрируем группу кнопок внутри полосы
+                float buttonsGroupStartX = bandLeftX + (bandWidthCurrent - totalButtonsWidth) / 2.0f;
+
+                bypassButtons[i].setBounds(juce::roundToInt(buttonsGroupStartX), juce::roundToInt(buttonY), buttonWidth, buttonHeight);
+                soloButtons[i].setBounds(juce::roundToInt(buttonsGroupStartX + buttonWidth + buttonSpacing), juce::roundToInt(buttonY), buttonWidth, buttonHeight);
+                muteButtons[i].setBounds(juce::roundToInt(buttonsGroupStartX + (buttonWidth + buttonSpacing) * 2), juce::roundToInt(buttonY), buttonWidth, buttonHeight);
+
+                bypassButtons[i].setVisible(true);
+                soloButtons[i].setVisible(true);
+                muteButtons[i].setVisible(true);
+            }
+            else {
+                bypassButtons[i].setVisible(false);
+                soloButtons[i].setVisible(false);
+                muteButtons[i].setVisible(false);
+            }
+        }
+    }
+
+
 
     juce::Rectangle<float> AnalyzerOverlay::getGraphBounds() const
     {
@@ -492,6 +603,18 @@ namespace MBRP_GUI
 
     void AnalyzerOverlay::mouseDown(const juce::MouseEvent& event)
     {
+
+        for (int i = 0; i < numBands; ++i) {
+            if (event.eventComponent == &soloButtons[i] ||
+                event.eventComponent == &muteButtons[i] ||
+                event.eventComponent == &bypassButtons[i])
+            {
+                // Клик был по одной из кнопок B/S/M.
+                // Ничего не делаем здесь, позволяем кнопке обработать событие.
+                // Важно, чтобы эти кнопки были добавлены как дочерние к AnalyzerOverlay.
+                return;
+            }
+        }
         popupHideDelayFramesCounter = 0;
 
         auto graphBounds = getGraphBounds();
@@ -508,7 +631,7 @@ namespace MBRP_GUI
             paramToChange->beginChangeGesture();
             setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
             currentCrossoverHoverState = CrossoverHoverState::None;
-            currentCrossoverDragState = CrossoverDraggingState::None;
+            //currentCrossoverDragState = CrossoverDraggingState::None;
             targetHighlightAlpha = 0.0f;
 
             int bandIndex = -1;
