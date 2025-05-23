@@ -14,6 +14,7 @@ namespace MBRP_GUI
             button.setRadioGroupId(1);    // Все кнопки в одной радио-группе
             button.setClickingTogglesState(true);
             button.onClick = [this, &button]() { bandButtonClicked(&button); };
+            //button.setColour(juce::Button::Textboxcolour);
             addAndMakeVisible(button);
         };
 

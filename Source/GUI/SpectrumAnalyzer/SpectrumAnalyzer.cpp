@@ -292,7 +292,7 @@ namespace MBRP_GUI
             juce::Rectangle<float> peakTextArea(graphBounds.getRight() - peakTextAreaWidth, graphBounds.getY(), peakTextAreaWidth, peakTextAreaHeight);
             g.drawText(peakText, peakTextArea.toNearestInt(), Justification::centredRight, false);
         }
-        g.setColour(juce::Colours::lightgrey);
+        g.setColour(ColorScheme::getAnalyzerOutlineColor());
         g.drawRect(getLocalBounds(), 1.f);
     }
 

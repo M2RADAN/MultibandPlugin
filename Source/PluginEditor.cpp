@@ -92,10 +92,10 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
         slider.setTextBoxStyle(juce::Slider::TextBoxBelow, true, 80, 20);
         slider.setPopupDisplayEnabled(true, false, this);
-        slider.setColour(juce::Slider::thumbColourId, ColorScheme::getSliderThumbColor());
-        slider.setColour(juce::Slider::trackColourId, ColorScheme::getSliderTrackColor());
+        slider.setColour(juce::Slider::thumbColourId, ColorScheme::getRotarySliderThumbColor());
+        slider.setColour(juce::Slider::trackColourId, ColorScheme::getRotarySliderBackBodyColor());
         slider.setColour(juce::Slider::textBoxTextColourId, ColorScheme::getSecondaryTextColor());
-        slider.setColour(juce::Slider::textBoxOutlineColourId, ColorScheme::getSliderTrackColor().darker(0.2f));
+        slider.setColour(juce::Slider::textBoxOutlineColourId, ColorScheme::getRotarySliderThumbColor());
         slider.setName(labelText);
         label.setText(labelText, juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
@@ -232,15 +232,15 @@ void MBRPAudioProcessorEditor::resized() {
         int singleCrossoverWidthAlt = (crossoverSectionAlt.getWidth() - (numCrossoverSlidersAlt - 1) * padding) / numCrossoverSlidersAlt;
 
         auto lowMidAreaAlt = crossoverSectionAlt.removeFromLeft(singleCrossoverWidthAlt);
-        lowMidCrossoverLabel.setBounds(lowMidAreaAlt.removeFromTop(labelHeightAlt));
+        lowMidCrossoverLabel.setBounds(lowMidAreaAlt.removeFromTop(labelHeightAlt + padding));
         lowMidCrossoverSlider.setBounds(lowMidAreaAlt);
         crossoverSectionAlt.removeFromLeft(padding);
         auto midAreaAlt = crossoverSectionAlt.removeFromLeft(singleCrossoverWidthAlt);
-        midCrossoverLabel.setBounds(midAreaAlt.removeFromTop(labelHeightAlt));
+        midCrossoverLabel.setBounds(midAreaAlt.removeFromTop(labelHeightAlt + padding));
         midCrossoverSlider.setBounds(midAreaAlt);
         crossoverSectionAlt.removeFromLeft(padding);
         auto midHighAreaAlt = crossoverSectionAlt;
-        midHighCrossoverLabel.setBounds(midHighAreaAlt.removeFromTop(labelHeightAlt));
+        midHighCrossoverLabel.setBounds(midHighAreaAlt.removeFromTop(labelHeightAlt + padding));
         midHighCrossoverSlider.setBounds(midHighAreaAlt);
 
         alternativeControlsArea.removeFromTop(padding);

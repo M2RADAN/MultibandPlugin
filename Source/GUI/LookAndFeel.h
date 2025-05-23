@@ -21,14 +21,14 @@ namespace ColorScheme
     inline juce::Colour getSecondaryTextColor() { return colorHelper(juce::Colours::grey); }       // Менее важный текст
 
     // --- Цвета анализатора (адаптированные под светлый фон) ---
-    inline juce::Colour getAnalyzerBackgroundColor() { return colorHelper(juce::Colour(0xFF2D2D2D)); }     // Фон анализатора - белый
+    inline juce::Colour getAnalyzerBackgroundColor() { return colorHelper(juce::Colour(0xFF1E1E1E)); }     // Фон анализатора - белый
     inline juce::Colour getAnalyzerGridBaseColor() { return colorHelper(juce::Colour(0xFF4D4D4D)); } // Сетка анализатора
     inline juce::Colour getScaleTextColor() { return getTextColor(); }                       // Текст шкал (темно-серый)
     inline juce::Colour getAnalyzerPeakTextColor() { return getTextColor(); }                       // Текст пика
     inline juce::Colour getZeroDbLineBaseColor() { return colorHelper(juce::Colour(0xFF4D4D4D)); }  // Линия 0 дБ (темная)
-
+    inline juce::Colour getAnalyzerOutlineColor() { return colorHelper(juce::Colour(0xFF1E1E1E)); }  // Линия 0 дБ (темная)
     // --- Цвета спектра и линий (можно оставить яркими) ---
-    inline juce::Colour getInputSignalColor() { return colorHelper(juce::Colour(0xff008cff)); } // Синий для спектра
+    inline juce::Colour getInputSignalColor() { return colorHelper(juce::Colour(0xFF40E0D0)); } // Синий для спектра
     inline juce::Colour getSpectrumFillBaseColor() { return getInputSignalColor(); }
     inline juce::Colour getSpectrumLineColor() { return getInputSignalColor(); }
     inline juce::Colour getPeakHoldLineBaseColor() { return colorHelper(juce::Colours::orange); }    // Оранжевый для пиков
@@ -58,12 +58,12 @@ namespace ColorScheme
     inline juce::Colour getRotarySliderBackBodyColor() { return colorHelper(juce::Colour(0xFF1E1E1E)); }
     inline juce::Colour getRotarySliderValueArcColor() { return colorHelper(juce::Colour(0xFF40E0D0)); } // Бирюзовый для дуги значения
     inline juce::Colour getRotarySliderThumbColor() { return getRotarySliderValueArcColor(); }    // Указатель того же цвета
-    inline juce::Colour getRotarySliderTextColor() { return colorHelper(juce::Colours::whitesmoke); } // Белый/светлый текст на слайдере
+    inline juce::Colour getRotarySliderTextColor() { return colorHelper(juce::Colour(0xFF3D3D3D)); } // Белый/светлый текст на слайдере
     inline juce::Colour getRotarySliderLabelColor() { return getTextColor(); }
 
     // --- Цвета кнопок Low/Mid/High (BandSelectControls) ---
-    inline juce::Colour getToggleButtonOffColor() { return colorHelper(juce::Colours::lightgrey); }    // Фон неактивной кнопки
-    inline juce::Colour getToggleButtonOffBorder() { return colorHelper(juce::Colours::grey); }         // Граница неактивной кнопки
+    inline juce::Colour getToggleButtonOffColor() { return colorHelper(juce::Colour(0xFF3D3D3D)); }    // Фон неактивной кнопки
+    inline juce::Colour getToggleButtonOffBorder() { return colorHelper(juce::Colour(0xFF2B2F38)); }         // Граница неактивной кнопки
     inline juce::Colour getToggleButtonOffTextColor() { return getTextColor(); }                       // Текст неактивной кнопки (темно-серый)
     // Цвета для активной кнопки будут браться из цветов кроссоверов/полос
   //  inline juce::Colour getLowBandColor() { return getOrangeBorderColor(); }                 // Используем цвет Low/Mid кроссовера

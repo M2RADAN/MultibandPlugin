@@ -131,7 +131,7 @@ void LookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width, i
     // Draw track
     auto trackRect = bounds.withSizeKeepingCentre(bounds.getWidth(), trackWidth);
     g.setColour(slider.findColour(Slider::trackColourId)); // Use defined track color
-    g.fillRoundedRectangle(trackRect, trackWidth / 2.0f);
+    g.fillRoundedRectangle(trackRect, trackWidth / 1.0f);
 
     // Draw thumb
     auto thumbWidth = 10.0f;
