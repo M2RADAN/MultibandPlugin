@@ -66,17 +66,25 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     addAndMakeVisible(analyzer);
     addAndMakeVisible(analyzerOverlay);
 
-    auto setupRotarySliderComponent = [&](RotarySliderWithLabels& slider) {
-        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        slider.setPopupDisplayEnabled(true, true, this, 500);
+    auto setupRotarySliderComponent =
+        [&](RotarySliderWithLabels& slider, bool titleIsAbove, bool showRange)
+        {
+            slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+            slider.setPopupDisplayEnabled(true, true, this, 500);
+            slider.setTitlePosition(titleIsAbove); // Устанавливаем позицию заголовка
+            slider.setShowRangeLabels(showRange);  // Устанавливаем, показывать ли метки диапазона
+            // addAndMakeVisible(slider); // Уже сделано ранее
         };
 
-    setupRotarySliderComponent(wetSlider); /* ... и для всех остальных роторных ... */
-    setupRotarySliderComponent(spaceSlider);
-    setupRotarySliderComponent(distanceSlider);
-    setupRotarySliderComponent(delaySlider);
-    setupRotarySliderComponent(gainSlider);
-    setupRotarySliderComponent(panSlider);
+    setupRotarySliderComponent(gainSlider, false, false);
+    setupRotarySliderComponent(wetSlider, false, false);
+    setupRotarySliderComponent(spaceSlider, false, false);
+    setupRotarySliderComponent(distanceSlider, false, false);
+    setupRotarySliderComponent(delaySlider, false, false);
+
+    // Для Pan: заголовок снизу (если он есть, иначе будет внешняя метка panLabel),
+    // но метки диапазона "L", "C", "R" показываем
+    setupRotarySliderComponent(panSlider, false, true);
 
     controlBar.onAnalyzerToggle = [this](bool state) { handleAnalyzerToggle(state); };
     bool initialAnalyzerState = processorRef.isCopyToFifoEnabled();

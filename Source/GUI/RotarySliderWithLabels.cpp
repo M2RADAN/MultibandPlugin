@@ -20,20 +20,10 @@ void RotarySliderWithLabels::paint(juce::Graphics& g)
 {
     using namespace juce;
     auto localBounds = getLocalBounds();
-    auto sliderActualBounds = getSliderBounds(); // Область, где будет рисоваться сам слайдер LookAndFeel'ом
+    auto sliderActualBounds = getSliderBounds();
 
-    // --- Рисуем заголовок (title) НАД областью слайдера ---
-    if (getName().isNotEmpty())
-    {
-        Rectangle<int> titleArea = localBounds.removeFromTop(getTextHeight() + 2);
-        g.setColour(ColorScheme::getRotarySliderLabelColor()); // Цвет для заголовка
-        g.setFont(Font(static_cast<float>(getTextHeight()), Font::plain));
-        g.drawText(getName(), titleArea, Justification::centredBottom, false);
-    }
-
-    // --- LookAndFeel нарисует сам слайдер (круг, дуги, указатель, центральный текст) ---
-    // Передаем sliderActualBounds в LookAndFeel
-    auto startAng = degreesToRadians(180.f + 45.f); // Стандартные углы для Rotary
+    // --- LookAndFeel нарисует сам слайдер ---
+    auto startAng = degreesToRadians(180.f + 45.f);
     auto endAng = degreesToRadians(180.f - 45.f) + MathConstants<float>::twoPi;
     auto range = getRange();
 
@@ -47,31 +37,98 @@ void RotarySliderWithLabels::paint(juce::Graphics& g)
         endAng,
         *this);
 
-    // --- Отрисовка внешних меток (L/C/R для Pan) ---
-    if (!labels.isEmpty())
+    // --- Рисуем заголовок (title) ---
+    if (getName().isNotEmpty())
     {
-        auto center = sliderActualBounds.toFloat().getCentre(); // Центр относительно области слайдера
-        // Радиус чуть больше видимого радиуса слайдера из LookAndFeel
-        float visibleRadiusInLnF = jmin(sliderActualBounds.getWidth(), sliderActualBounds.getHeight()) / 2.0f - 4.0f;
-        float labelsRadius = visibleRadiusInLnF + static_cast<float>(getTextHeight()) * 0.8f; // Положение меток L/C/R
+        juce::Font titleFont("K2D", 24.0f, juce::Font::plain);
+        g.setColour(ColorScheme::getRotarySliderLabelColor());
+        g.setFont(titleFont);
+        Rectangle<int> titleArea;
+        if (titleAboveSlider) {
+            titleArea = localBounds.removeFromTop(getTitleHeight()).reduced(0, 2);
+            g.drawText(getName(), titleArea, Justification::centredBottom, false);
+        }
+        else {
+            titleArea = localBounds.removeFromBottom(getTitleHeight()).reduced(0, 2);
+            g.drawText(getName(), titleArea, Justification::centredTop, false);
+        }
+    }
 
-        g.setColour(ColorScheme::getRotarySliderLabelColor()); // Цвет для L/C/R
-        auto labelFont = juce::Font(juce::FontOptions(static_cast<float>(getTextHeight() - 2)));
-        g.setFont(labelFont);
+    // --- Отрисовка внешних меток диапазона (L/C/R для Pan или 0%/100% для других) ---
+    if (drawRangeLabels && !labels.isEmpty())
+    {
+        auto center = sliderActualBounds.toFloat().getCentre();
+        // Шрифт для меток L/C/R (и других меток диапазона)
+        auto rangeLabelFont = juce::Font(juce::FontOptions(12.0f)); // Можно сделать поменьше, если нужно
+        g.setFont(rangeLabelFont);
+        g.setColour(ColorScheme::getRotarySliderLabelColor());
+
+        bool isPan = (param != nullptr && param->getName(100).containsIgnoreCase("Pan"));
 
         for (const auto& labelPos : labels)
         {
-            auto pos = labelPos.pos; // 0.0, 0.5, 1.0
-            auto ang = jmap(pos, 0.0f, 1.0f, startAng, endAng);
-            auto labelCenter = center.getPointOnCircumference(labelsRadius, ang);
-
+            auto pos = labelPos.pos; // 0.0 (min), 0.5 (center), 1.0 (max)
             auto str = labelPos.label;
-            float textWidth = getTextLayoutWidth(str, labelFont);
-            Rectangle<float> textBounds(0, 0, textWidth + 4.0f, static_cast<float>(getTextHeight()));
-            textBounds.setCentre(labelCenter);
-            // Убедимся, что метки не выходят за общие границы компонента
-            textBounds.setX(juce::jmax((float)localBounds.getX(), textBounds.getX()));
-            textBounds.setRight(juce::jmin((float)localBounds.getRight(), textBounds.getRight()));
+            float textWidth = rangeLabelFont.getStringWidthFloat(str);
+            Rectangle<float> textBounds(textWidth + 4.0f, 14.0f); // Ширина с небольшим запасом, высота 14
+
+            if (isPan) // Специальное позиционирование для L/C/R у Pan слайдера
+            {
+                // Предполагаем, что заголовок "PAN" уже нарисован под слайдером
+                // Метки L и R по бокам от нижней части слайдера
+                float yPosPanLabels = sliderActualBounds.getBottom() + 2; // Чуть ниже круга слайдера
+
+                if (str.equalsIgnoreCase("L")) {
+                    textBounds.setCentre(sliderActualBounds.getX() + textBounds.getWidth() / 2.0f, yPosPanLabels);
+                }
+                else if (str.equalsIgnoreCase("R")) {
+                    textBounds.setCentre(sliderActualBounds.getRight() - textBounds.getWidth() / 2.0f, yPosPanLabels);
+                }
+                else if (str.equalsIgnoreCase("C")) {
+                    // Метку "C" можно не рисовать, если значение "C" отображается внутри слайдера
+                    // Если все же нужно, можно разместить ее по центру под слайдером, но выше заголовка "PAN"
+                    // или немного сдвинуть L и R, чтобы освободить место.
+                    // Пока пропустим отрисовку "C" как внешней метки, если getDisplayString() ее показывает.
+                    if (getDisplayString().equalsIgnoreCase("C")) continue; // Не рисуем внешнюю "C", если она уже в центре
+                    textBounds.setCentre(center.x, yPosPanLabels);
+                }
+                else {
+                    // Для других меток у Pan (если вдруг будут) используем стандартное размещение
+                    auto ang = jmap(pos, 0.0f, 1.0f, startAng, endAng);
+                    float radiusForOtherLabels = sliderActualBounds.getWidth() * 0.6f; // Примерный радиус
+                    textBounds.setCentre(center.getPointOnCircumference(radiusForOtherLabels, ang));
+                }
+            }
+            else // Стандартное позиционирование для других слайдеров (0%, 100%)
+            {
+                // По бокам от слайдера, если заголовок снизу
+                // Или по кругу, если заголовок сверху (как было раньше)
+                if (!titleAboveSlider) {
+                    float yPosRangeLabels = sliderActualBounds.getBottom() - textBounds.getHeight() / 2 - 5; // Немного выше низа слайдера
+                    if (pos == 0.0f) { // Левая метка
+                        textBounds.setCentre(sliderActualBounds.getX() - textWidth / 2 - 5, yPosRangeLabels);
+                    }
+                    else if (pos == 1.0f) { // Правая метка
+                        textBounds.setCentre(sliderActualBounds.getRight() + textWidth / 2 + 5, yPosRangeLabels);
+                    }
+                    else { // Для других меток (например, центральной, если бы она была)
+                        auto ang = jmap(pos, 0.0f, 1.0f, startAng, endAng);
+                        float radiusForOtherLabels = sliderActualBounds.getWidth() * 0.6f;
+                        textBounds.setCentre(center.getPointOnCircumference(radiusForOtherLabels, ang));
+                    }
+                }
+                else { // Заголовок сверху, метки по кругу (старое поведение)
+                    auto ang = jmap(pos, 0.0f, 1.0f, startAng, endAng);
+                    float radiusForLabels = sliderActualBounds.getWidth() * 0.5f + 10.0f; // Чуть дальше от круга
+                    textBounds.setCentre(center.getPointOnCircumference(radiusForLabels, ang));
+                }
+            }
+
+            // Ограничение, чтобы метки не вылезали за пределы компонента
+            textBounds.setX(juce::jmax(0.0f, textBounds.getX()));
+            textBounds.setRight(juce::jmin((float)getWidth(), textBounds.getRight()));
+            textBounds.setY(juce::jmax(0.0f, textBounds.getY()));
+            textBounds.setBottom(juce::jmin((float)getHeight(), textBounds.getBottom()));
 
             g.drawFittedText(str, textBounds.toNearestInt(), Justification::centred, 1);
         }
@@ -81,21 +138,24 @@ void RotarySliderWithLabels::paint(juce::Graphics& g)
 juce::Rectangle<int> RotarySliderWithLabels::getSliderBounds() const
 {
     auto bounds = getLocalBounds();
-    // Убираем место для заголовка сверху
-    if (getName().isNotEmpty()) {
-        bounds.removeFromTop(getTextHeight() + 2);
+    if (getName().isNotEmpty()) { // Если есть заголовок
+        if (titleAboveSlider) {
+            bounds.removeFromTop(getTitleHeight());
+        }
+        else {
+            bounds.removeFromBottom(getTitleHeight());
+        }
     }
-    // Убираем место для внешних меток L/C/R снизу (если они предполагаются)
-    // и для текстового поля, если оно есть
-    int bottomMargin = 0;
-    if (!labels.isEmpty()) bottomMargin = getTextHeight() + 2; // Примерный отступ для L/R
-    if (getTextBoxPosition() != NoTextBox && isTextBoxEditable()) {
-        bottomMargin = juce::jmax(bottomMargin, getTextBoxHeight());
+
+    // Убираем место для внешних меток диапазона, если они рисуются и заголовок НЕ снизу
+    // (если заголовок снизу, предполагаем, что метки диапазона рисуются по бокам и не требуют доп. места по вертикали)
+    int bottomMarginForRangeLabels = 0;
+    if (drawRangeLabels && !labels.isEmpty() && titleAboveSlider) {
+        // Примерный отступ, если метки рисуются вокруг и заголовок сверху
+        bottomMarginForRangeLabels = 15; // Можно сделать зависимым от getTextHeight или другого значения
     }
-    bounds.removeFromBottom(bottomMargin);
+    bounds.removeFromBottom(bottomMarginForRangeLabels);
 
-
-    // Вписываем квадрат в оставшееся пространство
     int size = juce::jmin(bounds.getWidth(), bounds.getHeight());
     return bounds.withSizeKeepingCentre(size, size);
 }
