@@ -123,7 +123,10 @@ namespace MBRP_GUI
         std::unique_ptr<ButtonAttachment> soloAttachments[numBands];
         std::unique_ptr<ButtonAttachment> muteAttachments[numBands];
         std::unique_ptr<ButtonAttachment> bypassAttachments[numBands];
-
+        juce::Label crossoverPopupDisplay;
+        CrossoverHoverState currentlyHoveredCrossoverState{ CrossoverHoverState::None }; // Для отслеживания наведения на кроссовер для pop-up
+        juce::AudioParameterFloat* currentlyHoveredOrDraggedCrossoverParam{ nullptr };
+        void showCrossoverPopup(const juce::MouseEvent* eventForPosition, float valueHz);
         void showGainPopup(const juce::MouseEvent* eventForPosition, float valueDb); // Передаем MouseEvent для позиции
         void hideGainPopup();
         void startPopupHideDelay();
