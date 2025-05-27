@@ -22,7 +22,7 @@ namespace ColorScheme
     inline juce::Colour pluginSalad() { return colorHelper(juce::Colour(0xFFD8FFD8)); }
     inline juce::Colour pluginCyan() { return colorHelper(juce::Colour(0xFF00FFFF)); }
     inline juce::Colour pluginLime() { return colorHelper(juce::Colour(0xFFE2FF2A)); }
-    inline juce::Colour pluginToxicOrange() { return colorHelper(juce::Colour(0xFFFFE200)); }
+    inline juce::Colour pluginToxicOrange() { return colorHelper(juce::Colour(0xFFF7B50B)); }
     inline juce::Colour pluginGreen() { return colorHelper(juce::Colour(0xFF0FC410)); }
 
     // --- Основные цвета светлой темы ---
