@@ -107,7 +107,7 @@ namespace MBRP_GUI
 
             // Применяем окно Ханна
             hannWindow.multiplyWithWindowingTable(fftBuffer.getWritePointer(0), static_cast<size_t>(MBRPAudioProcessor::fftSize));
-
+            
             // Выполняем БПФ
             forwardFFT.performFrequencyOnlyForwardTransform(fftBuffer.getWritePointer(0)); // Результат в fftBuffer
 
@@ -140,6 +140,7 @@ namespace MBRP_GUI
                 avgSpectrumDataPtr = 1; // avgSpectrumDataPtr циклически проходит от 1 до N-1
 
             dataWasProcessedInThisLoopIteration = true;
+            
         }
 
 
@@ -280,20 +281,25 @@ namespace MBRP_GUI
             lastWidthForFftPointsRecalc = getWidth();
         }
         drawFrequencyGrid(g, graphBounds);
-        drawGainScale(g, graphBounds);
-        if (analyzerIsActive.load())
+        //КОММЕНТ
+
+        
+        drawGainScale(g, graphBounds); // эта строка
+        
+        if (analyzerIsActive.load())   // эта строка
         {
             drawSpectrumAndPeaks(g, graphBounds);
+            /*
             g.setColour(ColorScheme::getAnalyzerPeakTextColor());
             auto peakFont = juce::Font(juce::FontOptions(12.0f)); g.setFont(peakFont);
             float currentPeak = peakDbLevel.load();
             String peakText = "Peak: " + ((currentPeak <= mindB + 0.01f) ? String("-inf dB") : String(currentPeak, 1) + " dB");
             float peakTextAreaWidth = getTextLayoutWidth(peakText, peakFont) + 10.f; float peakTextAreaHeight = 15.f;
             juce::Rectangle<float> peakTextArea(graphBounds.getRight() - peakTextAreaWidth, graphBounds.getY(), peakTextAreaWidth, peakTextAreaHeight);
-            g.drawText(peakText, peakTextArea.toNearestInt(), Justification::centredRight, false);
-        }
+            g.drawText(peakText, peakTextArea.toNearestInt(), Justification::centredRight, false); */
+        } 
         g.setColour(ColorScheme::getAnalyzerOutlineColor());
-        g.drawRect(getLocalBounds(), 1.f);
+        g.drawRect(getLocalBounds(), 1.f); 
     }
 
     // Объявление lastWidthForFftPointsRecalc, если он еще не объявлен в .h
@@ -323,13 +329,16 @@ namespace MBRP_GUI
         float labelFreqs[] = { 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000 };
         g.setColour(ColorScheme::getScaleTextColor());
         auto freqLabelFont = juce::Font(juce::FontOptions(9.f)); g.setFont(freqLabelFont);
+        //КОММЕНТ
+
+        /*
         for (float f : labelFreqs) {
             float x = left + frequencyToX(f, width);
             String str = (f >= 1000.f) ? String(f / 1000.f, (f < 10000.f ? 1 : 0)) + "k" : String(roundToInt(f));
-            float textW = getTextLayoutWidth(str, freqLabelFont);
+            float textW = getTextLayoutWidth(str, freqLabelFont); // эта строка
             Rectangle<float> r(0, 0, textW, 10.f); r.setCentre(x, bottom - 5.f);
             if (r.getX() >= left - 2.f && r.getRight() <= right + 2.f) g.drawFittedText(str, r.toNearestInt(), Justification::centred, 1);
-        }
+        } */
     }
 
     void SpectrumAnalyzer::drawGainScale(juce::Graphics& g, const juce::Rectangle<float>& bounds)
@@ -344,6 +353,10 @@ namespace MBRP_GUI
         const auto zeroLineCol = ColorScheme::getZeroDbLineBaseColor();
         const auto gridLineCol = ColorScheme::getAnalyzerGridBaseColor();
         const auto gridTextCol = ColorScheme::getScaleTextColor();
+
+        // КОММЕНТ
+
+        /*
         for (float db : levels) {
             float y = jlimit(top, jmap(db, mindB, maxdB, bottom, top), bottom);
             bool isZero = approximatelyEqual(db, 0.0f); bool isMajor = isZero || (roundToInt(db) != 0 && roundToInt(db) % 12 == 0);
@@ -351,11 +364,11 @@ namespace MBRP_GUI
             g.drawHorizontalLine(roundToInt(y), left, right);
             if (isMajor || db == maxdB || db == mindB) {
                 g.setColour(gridTextCol); String str = String(roundToInt(db)); if (db > 0.01f && !str.startsWithChar('+')) str = "+" + str;
-                float textW = getTextLayoutWidth(str, labelFont);
+                float textW = getTextLayoutWidth(str, labelFont); // эта строка
                 g.drawText(str, roundToInt(left + 4.f), roundToInt(y - 5.f), roundToInt(textW), 10, Justification::centredLeft);
                 g.drawText(str, roundToInt(right - textW - 4.f), roundToInt(y - 5.f), roundToInt(textW), 10, Justification::centredRight);
             }
-        }
+        } */
     }
 
     void SpectrumAnalyzer::drawSpectrumAndPeaks(juce::Graphics& g, const juce::Rectangle<float>& bounds)
