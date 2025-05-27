@@ -110,7 +110,8 @@ namespace MBRP_GUI
                 // needsRepaint уже будет true, если pop-up был виден
             }
         }
-
+        // из-за автоматизации DAW или перетаскивания в этом же компоненте.
+        positionBandControls(getGraphBounds());
         // Всегда перерисовываем, чтобы линии обновлялись, если параметр изменился извне
         // Это также обновит и маркеры Gain, если их параметры изменились
         needsRepaint = true;
@@ -130,55 +131,93 @@ namespace MBRP_GUI
     {
         auto leftGraphEdge = graphBounds.getX();
         auto graphWidth = graphBounds.getWidth();
+        auto graphCentreY = graphBounds.getCentreY(); // Центральная Y для вертикального позиционирования
 
-        // Позиция кнопок (например, вверху каждой полосы)
-        float buttonY = graphBounds.getY() + 3.0f; // Небольшой отступ сверху
-        int buttonWidth = 18;  // Маленький размер для кнопок
-        int buttonHeight = 16; //
-        int buttonSpacing = 2;  // Расстояние между кнопками S, M, B
+        int buttonWidth = 18;
+        int buttonHeight = 16;
+        int verticalSpacingBetweenButtons = 2;
+        float horizontalOffsetFromCrossoverLine = 5.0f; // Отступ кнопок от линии кроссовера
 
-        float lmFreq = processorRef.lowMidCrossover->get();
-        float mFreq = processorRef.midCrossover->get();
-        float mhFreq = processorRef.midHighCrossover->get();
-
-        float x_coords[] = {
-            leftGraphEdge,
-            mapFreqToXLog(lmFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
-            mapFreqToXLog(mFreq,  leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
-            mapFreqToXLog(mhFreq, leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
-            graphBounds.getRight()
+        // Получаем X-координаты линий кроссоверов
+        float crossoverLineX[] = {
+            mapFreqToXLog(processorRef.lowMidCrossover->get(), leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            mapFreqToXLog(processorRef.midCrossover->get(),    leftGraphEdge, graphWidth, minLogFreq, maxLogFreq),
+            mapFreqToXLog(processorRef.midHighCrossover->get(),leftGraphEdge, graphWidth, minLogFreq, maxLogFreq)
         };
+
+        // Определяем X-координаты для групп кнопок каждой полосы
+        // Кнопки для полосы i будут справа от линии кроссовера i-1 (или у левого края для первой полосы)
+        // и слева от линии кроссовера i.
+        // В Saturn они обычно привязаны к ПРАВОЙ границе полосы (т.е. к линии кроссовера, ее завершающей).
+
+        float bandRightBoundaryX[numBands];
+        bandRightBoundaryX[0] = crossoverLineX[0]; // Правая граница Low полосы = Low/L-Mid кроссовер
+        bandRightBoundaryX[1] = crossoverLineX[1]; // Правая граница L-Mid полосы = L-Mid/M-High кроссовер
+        bandRightBoundaryX[2] = crossoverLineX[2]; // Правая граница M-High полосы = M-High/High кроссовер
+        bandRightBoundaryX[3] = graphBounds.getRight(); // Правая граница High полосы = край графика
+
+        float bandLeftBoundaryX[numBands];
+        bandLeftBoundaryX[0] = graphBounds.getX();
+        bandLeftBoundaryX[1] = crossoverLineX[0];
+        bandLeftBoundaryX[2] = crossoverLineX[1];
+        bandLeftBoundaryX[3] = crossoverLineX[2];
+
 
         for (int i = 0; i < numBands; ++i)
         {
-            float bandLeftX = x_coords[i];
-            float bandRightX = x_coords[i + 1];
+            // Горизонтальная позиция для группы кнопок этой полосы
+            // Разместим их немного левее от ПРАВОЙ границы полосы (линии кроссовера)
+            float buttonsAnchorX = bandRightBoundaryX[i] - horizontalOffsetFromCrossoverLine - buttonWidth;
 
+            // Если это самая первая полоса, и ее правая граница (первый кроссовер) слишком близко к левому краю,
+            // возможно, стоит сдвинуть кнопки немного правее от левого края полосы.
+            if (i == 0 && buttonsAnchorX < bandLeftBoundaryX[i] + buttonWidth + horizontalOffsetFromCrossoverLine) {
+                buttonsAnchorX = bandLeftBoundaryX[i] + horizontalOffsetFromCrossoverLine;
+            }
+            // Для последней полосы, если она слишком узкая, кнопки могут не поместиться.
+            // Проверяем, чтобы кнопки не вылезали за левую границу текущей полосы
+            if (buttonsAnchorX < bandLeftBoundaryX[i] + horizontalOffsetFromCrossoverLine && i > 0) {
+                buttonsAnchorX = bandLeftBoundaryX[i] + horizontalOffsetFromCrossoverLine;
+            }
+            // И чтобы не вылезали за правую границу графика
+            if (buttonsAnchorX + buttonWidth > graphBounds.getRight() - horizontalOffsetFromCrossoverLine) {
+                buttonsAnchorX = graphBounds.getRight() - buttonWidth - horizontalOffsetFromCrossoverLine;
+            }
+
+
+            // Вертикальное позиционирование: например, центрируем группу кнопок по вертикали графика
+            // или немного ниже центральной линии, как в Saturn 2.
+            float totalButtonsColumnHeight = buttonHeight * 3 + verticalSpacingBetweenButtons * 2;
+            float topButtonY = graphCentreY - totalButtonsColumnHeight / 2.0f;
+            // Можно добавить смещение, если нужно: + verticalOffsetFromCenter;
+
+            // Проверяем, видна ли полоса и достаточно ли она широка
             bool canShowButtons = true;
-            if (bandRightX <= bandLeftX || bandRightX < leftGraphEdge || bandLeftX > graphBounds.getRight()) {
-                canShowButtons = false;
-            }
-            bandLeftX = std::max(leftGraphEdge, bandLeftX);
-            bandRightX = std::min(graphBounds.getRight(), bandRightX);
-            if (bandRightX <= bandLeftX) {
+            if (bandRightBoundaryX[i] <= bandLeftBoundaryX[i] || // Полоса нулевой или отрицательной ширины
+                bandRightBoundaryX[i] < leftGraphEdge + buttonWidth || // Правая граница слишком слева
+                bandLeftBoundaryX[i] > graphBounds.getRight() - buttonWidth || // Левая граница слишком справа
+                (bandRightBoundaryX[i] - bandLeftBoundaryX[i]) < buttonWidth + 2 * horizontalOffsetFromCrossoverLine) // Полоса слишком узкая
+            {
                 canShowButtons = false;
             }
 
-            float bandWidthCurrent = bandRightX - bandLeftX;
-            float totalButtonsWidth = buttonWidth * 3 + buttonSpacing * 2;
-
-            if (bandWidthCurrent < totalButtonsWidth + 4) { // + небольшой запас
-                canShowButtons = false; // Слишком узкая полоса для кнопок
-            }
 
             if (canShowButtons) {
-                // Позиционируем кнопки S, M, B рядом друг с другом
-                // Например, центрируем группу кнопок внутри полосы
-                float buttonsGroupStartX = bandLeftX + (bandWidthCurrent - totalButtonsWidth) / 2.0f;
+                int currentButtonY = juce::roundToInt(topButtonY);
 
-                bypassButtons[i].setBounds(juce::roundToInt(buttonsGroupStartX), juce::roundToInt(buttonY), buttonWidth, buttonHeight);
-                soloButtons[i].setBounds(juce::roundToInt(buttonsGroupStartX + buttonWidth + buttonSpacing), juce::roundToInt(buttonY), buttonWidth, buttonHeight);
-                muteButtons[i].setBounds(juce::roundToInt(buttonsGroupStartX + (buttonWidth + buttonSpacing) * 2), juce::roundToInt(buttonY), buttonWidth, buttonHeight);
+                bypassButtons[i].setBounds(juce::roundToInt(buttonsAnchorX),
+                    currentButtonY,
+                    buttonWidth, buttonHeight);
+                currentButtonY += buttonHeight + verticalSpacingBetweenButtons;
+
+                soloButtons[i].setBounds(juce::roundToInt(buttonsAnchorX),
+                    currentButtonY,
+                    buttonWidth, buttonHeight);
+                currentButtonY += buttonHeight + verticalSpacingBetweenButtons;
+
+                muteButtons[i].setBounds(juce::roundToInt(buttonsAnchorX),
+                    currentButtonY,
+                    buttonWidth, buttonHeight);
 
                 bypassButtons[i].setVisible(true);
                 soloButtons[i].setVisible(true);
@@ -783,7 +822,7 @@ namespace MBRP_GUI
     void AnalyzerOverlay::mouseDrag(const juce::MouseEvent& event)
     {
         auto graphBounds = getGraphBounds();
-
+        bool positionChanged = false;
         if (currentGainDragState != GainDraggingState::None) {
             // Убедимся, что currentlyHoveredOrDraggedGainParam все еще валиден (хотя должен быть после mouseDown)
             if (!currentlyHoveredOrDraggedGainParam) {
@@ -797,14 +836,17 @@ namespace MBRP_GUI
             newGainDb = juce::jlimit(currentlyHoveredOrDraggedGainParam->getNormalisableRange().start,
                 currentlyHoveredOrDraggedGainParam->getNormalisableRange().end,
                 newGainDb);
-            currentlyHoveredOrDraggedGainParam->setValueNotifyingHost(currentlyHoveredOrDraggedGainParam->getNormalisableRange().convertTo0to1(newGainDb));
-
+            float oldValGain = currentlyHoveredOrDraggedGainParam->get();
+            // ПРОВЕРЯЕМ ПОРЯДОК АРГУМЕНТОВ ЗДЕСЬ:
+            if (std::abs(oldValGain - newGainDb) > 0.01f) { // значение1, значение2, допуск
+                currentlyHoveredOrDraggedGainParam->setValueNotifyingHost(currentlyHoveredOrDraggedGainParam->getNormalisableRange().convertTo0to1(newGainDb));
+                positionChanged = true;
+            }
             showGainPopup(&event, newGainDb); // Обновляем pop-up в реальном времени
             popupHideDelayFramesCounter = 0; // Не даем pop-up скрыться во время драга
-            return;
         }
 
-        if (currentCrossoverDragState != CrossoverDraggingState::None) {
+        else if (currentCrossoverDragState != CrossoverDraggingState::None) {
             startPopupHideDelay();
             float mouseX = juce::jlimit(graphBounds.getX(), graphBounds.getRight(), static_cast<float>(event.x));
             // ... (остальная логика для кроссовер drag, включая проверку paramToUpdateXOver != nullptr перед использованием) ...
@@ -831,10 +873,22 @@ namespace MBRP_GUI
 
             if (paramToUpdateXOver) { // <--- ДОБАВИТЬ ПРОВЕРКУ
                 float finalFreq = juce::jlimit(minAllowedFreq, maxAllowedFreq, newFreqRaw);
-                paramToUpdateXOver->setValueNotifyingHost(paramToUpdateXOver->getNormalisableRange().convertTo0to1(finalFreq));
+                if (std::abs(paramToUpdateXOver->get() - finalFreq )> 0.1f) { // Проверка на изменение
+                    paramToUpdateXOver->setValueNotifyingHost(paramToUpdateXOver->getNormalisableRange().convertTo0to1(finalFreq));
+                    positionChanged = true; // X-координаты границ полос изменились
+                }
+
             }
             targetHighlightAlpha = targetAlphaValue;
+        }
+        else
+        {
             return;
+        }
+
+        if (positionChanged) {
+            positionBandControls(graphBounds); // Обновляем позиции кнопок
+            repaint(); // Перерисовываем, чтобы показать изменения
         }
     }
 
