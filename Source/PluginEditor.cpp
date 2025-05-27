@@ -27,12 +27,12 @@ MBRPAudioProcessorEditor::MBRPAudioProcessorEditor(MBRPAudioProcessor& p)
     : AudioProcessorEditor(&p), processorRef(p),
     analyzer(p),
     analyzerOverlay(p), // Передаем весь процессор
-    wetSlider(nullptr, " %", "Wet"),
-    spaceSlider(nullptr, " %", "Space"),
-    distanceSlider(nullptr, " %", "Distance"),
-    delaySlider(nullptr, " ms", "Pre-Delay"),
-    panSlider(nullptr, "", "Pan"),
-    gainSlider(nullptr, " dB", "Gain"),
+    wetSlider(nullptr, " %", "WET"),
+    spaceSlider(nullptr, " %", "SPACE"),
+    distanceSlider(nullptr, " %", "DISTANCE"),
+    delaySlider(nullptr, " ms", "PRE-DELAY"),
+    panSlider(nullptr, "", "PAN"),
+    gainSlider(nullptr, " dB", "GAIN"),
     lowMidCrossoverAttachment(processorRef.getAPVTS(), "lowMidCrossover", lowMidCrossoverSlider),
     midCrossoverAttachment(processorRef.getAPVTS(), "midCrossover", midCrossoverSlider),
     midHighCrossoverAttachment(processorRef.getAPVTS(), "midHighCrossover", midHighCrossoverSlider)

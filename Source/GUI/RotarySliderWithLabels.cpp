@@ -40,8 +40,8 @@ void RotarySliderWithLabels::paint(juce::Graphics& g)
     // --- Рисуем заголовок (title) ---
     if (getName().isNotEmpty())
     {
-        juce::Font titleFont("K2D", 24.0f, juce::Font::plain);
-        g.setColour(ColorScheme::getRotarySliderLabelColor());
+        juce::Font titleFont("K2D", 16.0f, juce::Font::plain);
+        g.setColour(ColorScheme::getSliderTrackColor());
         g.setFont(titleFont);
         Rectangle<int> titleArea;
         if (titleAboveSlider) {
