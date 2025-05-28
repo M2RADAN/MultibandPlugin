@@ -21,32 +21,54 @@ namespace MBRP_GUI
         const juce::String muteParamIDs[] = { "lowMute", "lowMidMute", "midHighMute", "highMute" };
         const juce::String bypassParamIDs[] = { "lowBypass", "lowMidBypass", "midHighBypass", "highBypass" }; // <--- НОВОЕ
 
+        juce::Colour buttonOffColour = ColorScheme::getToggleButtonOffColor().darker(0.3f); // Темнее, чем глобальные кнопки
+        juce::Colour buttonOnColourLow = ColorScheme::getLowBandColor().brighter(0.2f);
+        juce::Colour buttonOnColourLowMid = ColorScheme::getLowMidBandColor().brighter(0.2f);
+        juce::Colour buttonOnColourMidHigh = ColorScheme::getMidHighBandColor().brighter(0.2f);
+        juce::Colour buttonOnColourHigh = ColorScheme::getHighBandAltColor().brighter(0.2f);
+        juce::Colour textColourOff = ColorScheme::getToggleButtonOffTextColor().brighter(0.5f);
+        juce::Colour textColourOn = ColorScheme::getToggleButtonOnTextColor(); // Обычно белый или черный
+
+        // Массив "включенных" цветов для каждой полосы
+        juce::Colour bandSpecificOnColours[] = {
+            buttonOnColourLow, buttonOnColourLowMid, buttonOnColourMidHigh, buttonOnColourHigh
+        };
+
         for (int i = 0; i < numBands; ++i)
         {
-            soloButtons[i].setButtonText("S");
-            soloButtons[i].setClickingTogglesState(true);
-            addAndMakeVisible(soloButtons[i]);
-            soloAttachments[i] = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), soloParamIDs[i], soloButtons[i]);
-            soloButtons[i].setTooltip("Solo Band " + juce::String(i + 1)); // Или более осмысленные имена полос
+            auto setupSmallButton = [&](juce::TextButton& btn, const juce::String& text, const juce::String& paramID,
+                std::unique_ptr<ButtonAttachment>& attachment, const juce::String& tooltip)
+                {
+                    btn.setButtonText(text);
+                    btn.setClickingTogglesState(true);
+                    btn.setColour(juce::TextButton::buttonColourId, buttonOffColour);
+                    // Цвет для состояния "включено" будет зависеть от полосы
+                    // Мы не можем установить его здесь один раз, так как эти кнопки (S, M, B)
+                    // не меняют свой "основной" цвет в зависимости от *выбранной* полосы,
+                    // а скорее их цвет "включено" может быть фиксированным или зависеть от *их собственной* полосы.
+                    // Для простоты, сделаем цвет "включено" одним и тем же для всех S, M, B,
+                    // но он будет ярче, чем выключенное состояние.
+                    // Или можно использовать bandSpecificOnColours[i] для кнопки i-й полосы.
+                    // Давайте попробуем цвет, специфичный для полосы, для состояния "включено".
+                    btn.setColour(juce::TextButton::buttonOnColourId, bandSpecificOnColours[i].darker(0.2f)); // Немного темнее основного цвета полосы
+                    btn.setColour(juce::TextButton::textColourOffId, textColourOff);
+                    btn.setColour(juce::TextButton::textColourOnId, textColourOn);
 
-            muteButtons[i].setButtonText("M");
-            muteButtons[i].setClickingTogglesState(true);
-            addAndMakeVisible(muteButtons[i]);
-            muteAttachments[i] = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), muteParamIDs[i], muteButtons[i]);
-            muteButtons[i].setTooltip("Mute Band " + juce::String(i + 1));
+                    // Уменьшаем шрифт для маленьких кнопок
+                    //btn.setFont(juce::Font(10.0f, juce::Font::bold)); // Маленький жирный шрифт
 
-            // --- НОВОЕ: Bypass кнопки для каждой полосы ---
-            bypassButtons[i].setButtonText("B");
-            bypassButtons[i].setClickingTogglesState(true);
-            addAndMakeVisible(bypassButtons[i]);
-            bypassAttachments[i] = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), bypassParamIDs[i], bypassButtons[i]);
-            bypassButtons[i].setTooltip("Bypass Band " + juce::String(i + 1) + " Effects");
-            // ---------------------------------------------
+                    addAndMakeVisible(btn);
+                    attachment = std::make_unique<ButtonAttachment>(processorRef.getAPVTS(), paramID, btn);
+                    btn.setTooltip(tooltip + juce::String(i + 1));
+                    btn.setVisible(true); // Видимы всегда по умолчанию
+                };
 
-            // Все кнопки видимы всегда
-            soloButtons[i].setVisible(true);
-            muteButtons[i].setVisible(true);
-            bypassButtons[i].setVisible(true); // <--- НОВОЕ
+            setupSmallButton(soloButtons[i], "S", soloParamIDs[i], soloAttachments[i], "Solo Band ");
+            soloButtons[i].setComponentID("OverlaySoloButton");
+            setupSmallButton(muteButtons[i], "M", muteParamIDs[i], muteAttachments[i], "Mute Band ");
+            muteButtons[i].setComponentID("OverlayMuteButton"); // <--- Устанавливаем ID
+            setupSmallButton(bypassButtons[i], "B", bypassParamIDs[i], bypassAttachments[i], "Bypass Band ");
+            bypassButtons[i].setComponentID("OverlayBypassButton"); // <--- Устанавливаем ID
         }
 
         gainPopupDisplay.setColour(juce::Label::backgroundColourId, juce::Colours::darkgrey.withAlpha(0.85f));
@@ -185,10 +207,10 @@ namespace MBRP_GUI
         auto graphWidth = graphBounds.getWidth();
         auto graphCentreY = graphBounds.getCentreY(); // Центральная Y для вертикального позиционирования
 
-        int buttonWidth = 18;
-        int buttonHeight = 16;
-        int verticalSpacingBetweenButtons = 2;
-        float horizontalOffsetFromCrossoverLine = 5.0f; // Отступ кнопок от линии кроссовера
+        int buttonWidth = 20;  // Меньше ширина
+        int buttonHeight = 20; // Меньше высота (или сделать их квадратными)
+        int verticalSpacingBetweenButtons = 3;
+        float horizontalOffsetFromCrossoverLine = 6.0f;
 
         // Получаем X-координаты линий кроссоверов
         float crossoverLineX[] = {
@@ -240,7 +262,7 @@ namespace MBRP_GUI
             // Вертикальное позиционирование: например, центрируем группу кнопок по вертикали графика
             // или немного ниже центральной линии, как в Saturn 2.
             float totalButtonsColumnHeight = buttonHeight * 3 + verticalSpacingBetweenButtons * 2;
-            float topButtonY = graphCentreY - totalButtonsColumnHeight / 2.0f;
+            float topButtonY = graphCentreY - graphCentreY/1.5f - totalButtonsColumnHeight / 2.0f;
             // Можно добавить смещение, если нужно: + verticalOffsetFromCenter;
 
             // Проверяем, видна ли полоса и достаточно ли она широка
@@ -372,6 +394,7 @@ namespace MBRP_GUI
         };
 
         const juce::String gainParamIDs[] = { "lowGain", "lowMidGain", "midHighGain", "highGain" };
+        const juce::String panParamIDs[] = { "lowPan", "lowMidPan", "midHighPan", "highPan" };
         Colour bandColours[] = {
             ColorScheme::getLowBandColor(),
             ColorScheme::getLowMidBandColor(),
@@ -386,6 +409,11 @@ namespace MBRP_GUI
         {
             auto* paramBase = processorRef.getAPVTS().getParameter(gainParamIDs[i]);
             auto* gainParam = dynamic_cast<juce::AudioParameterFloat*>(paramBase);
+            juce::AudioParameterFloat* panParamForActiveBand = nullptr;
+            if (i == activeBandIndex) { // Получаем панораму только для активной полосы
+                auto* paramBasePan = processorRef.getAPVTS().getParameter(panParamIDs[i]);
+                panParamForActiveBand = dynamic_cast<juce::AudioParameterFloat*>(paramBasePan);
+            }
             if (!gainParam) continue;
 
             float currentGainDb = gainParam->get();
@@ -405,20 +433,37 @@ namespace MBRP_GUI
             if (i == activeBandIndex)
             {
                 juce::Colour baseColour = bandColours[i];
-                // Градиент от цвета полосы (внизу) к почти прозрачному (вверху)
-                juce::ColourGradient gradient(baseColour.withAlpha(0.3f), // Цвет у маркера Gain
-                    bandLeftX, yPos,
-                    baseColour.withAlpha(0.0f), // Прозрачный цвет у верхней границы графика
-                    bandLeftX, top,
+
+                float panValue = 0.0f; // Центр по умолчанию
+                if (panParamForActiveBand) {
+                    panValue = panParamForActiveBand->get(); // Значение от -1.0 (L) до 1.0 (R)
+                }
+
+                // Рассчитываем смещение для X-координаты верхней точки градиента
+                // Максимальное смещение, например, половина ширины полосы
+                float bandWidthCurrent = bandRightX - bandLeftX;
+                float maxPanOffset = bandWidthCurrent * 0.4f; // 40% ширины полосы в каждую сторону
+                float panXOffset = panValue * maxPanOffset;
+
+                // Начальная точка градиента (внизу, у маркера Gain)
+                Point<float> gradientStartPoint(bandLeftX + bandWidthCurrent / 2.0f, yPos);
+
+                // Конечная точка градиента (вверху, смещенная по X в зависимости от панорамы)
+                Point<float> gradientEndPoint(gradientStartPoint.x + panXOffset, top);
+
+                // Ограничиваем конечную точку границами полосы, чтобы наклон не был слишком сильным
+                gradientEndPoint.x = juce::jlimit(bandLeftX, bandRightX, gradientEndPoint.x);
+
+
+                juce::ColourGradient gradient(baseColour.withAlpha(0.35f), // Цвет у начальной точки (внизу)
+                    gradientStartPoint,
+                    baseColour.withAlpha(0.0f),  // Прозрачный цвет у конечной точки (вверху)
+                    gradientEndPoint,
                     false);                     // не радиальный
 
-                // Можно сделать градиент на всю высоту полосы, если маркер по центру
-                // juce::ColourGradient gradient (baseColour.withAlpha(0.0f), bandLeftX, top,
-                //                                baseColour.withAlpha(0.4f), bandLeftX, bottom, false);
-                // gradient.addColour(0.5, baseColour.withAlpha(0.1f)); // для нелинейности
-
                 g.setGradientFill(gradient);
-                g.fillRect(bandLeftX, top, bandRightX - bandLeftX, height);
+                // Рисуем прямоугольник, покрывающий всю полосу по ширине и высоте графика
+                g.fillRect(bandLeftX, top, bandWidthCurrent, height);
             }
             // --------------------------------------------------------------
 

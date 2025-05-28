@@ -15,6 +15,19 @@ static float getTextLayoutWidth(const juce::String& text, const juce::Font& font
 }
 // ----------------------------------------------------
 
+juce::Font LookAndFeel::getTextButtonFont(juce::TextButton& button, int /*buttonHeight*/)
+{
+    juce::String id = button.getComponentID();
+    if (id == "OverlaySoloButton" || id == "OverlayMuteButton" || id == "OverlayBypassButton")
+    {
+        return juce::Font(10.0f, juce::Font::bold); // Маленький жирный шрифт для кнопок на оверлее
+    }
+    // ... (можно добавить другие проверки для других кнопок)
+
+    // Шрифт по умолчанию для остальных TextButton
+    return juce::Font(14.0f);
+}
+
 void LookAndFeel::drawRotarySlider(juce::Graphics& g,
     int x, int y, int width, int height,
     float sliderPosProportional, // Это значение от 0.0 (минимум) до 1.0 (максимум)

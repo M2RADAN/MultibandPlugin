@@ -137,6 +137,7 @@ struct LookAndFeel : juce::LookAndFeel_V4
         juce::ToggleButton& toggleButton,
         bool shouldDrawButtonAsHighlighted,
         bool shouldDrawButtonAsDown) override;
+    juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
 };
 
 // --- END OF FILE LookAndFeel.h ---
