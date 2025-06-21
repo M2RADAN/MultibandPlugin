@@ -2,7 +2,7 @@
 
 <JUCERPROJECT id="VIqBol" name="MBRP" projectType="audioplug" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" companyName="GoldNGrid"
-              pluginVST3Category="Reverb,Spatial">
+              pluginVST3Category="Reverb,Spatial,Stereo" pluginFormats="buildAU,buildAUv3,buildStandalone,buildVST3">
   <MAINGROUP id="UIw0zL" name="MBRP">
     <GROUP id="{240ADC6D-992C-2E44-53A0-FA4D2498D38F}" name="Source">
       <GROUP id="{A5234751-10F8-2D5A-BE0C-72AEF3C19321}" name="DSP"/>
@@ -65,8 +65,9 @@
   <EXPORTFORMATS>
     <VS2022 targetFolder="Builds/VisualStudio2022">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="MultibandPanner"/>
-        <CONFIGURATION isDebug="0" name="Release" targetName="MultibandPanner"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="MultibandPanner" winArchitecture="ARM64,ARM64EC,Win32,x64"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="MultibandPanner" winArchitecture="ARM64,ARM64EC,Win32,x64"
+                       winWarningLevel="2" characterSet="Unicode"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_audio_basics" path="../../../Desktop/juce/modules"/>
