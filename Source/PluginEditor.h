@@ -8,7 +8,6 @@
 #include "GUI/CustomButtons.h"
 #include "GUI/LookAndFeel.h"
 #include "GUI/RotarySliderWithLabels.h"
-// Путь к НОВОМУ анализатору
 #include "GUI/SpectrumAnalyzer/SpectrumAnalyzer.h"
 #include "GUI/AnlyzerOverlay/AnalyzerOverlay.h" 
 
@@ -20,35 +19,12 @@ struct ControlBar : juce::Component
     std::function<void(bool isAnalyzerOn)> onAnalyzerToggle;
     AnalyzerButton analyzerButton;
 private:
-    // Добавляем обработчик для кнопки внутри ControlBar
     void analyzerButtonToggled();
 };
 
-    // Добавляем обработчик для кнопки внутри ControlBar
-    
-// AnalyzerOverlay
-//namespace MBRP_GUI
-//{
-//    struct AnalyzerOverlay : juce::Component, juce::Timer
-//    {
-//        AnalyzerOverlay(juce::AudioParameterFloat& lowXover, juce::AudioParameterFloat& midXover);
-//        void paint(juce::Graphics& g) override;
-//        void timerCallback() override;
-//        void resized() override;
-//
-//    private:
-//        void drawCrossoverLines(juce::Graphics& g, juce::Rectangle<int> bounds);
-//        juce::AudioParameterFloat& lowMidXoverParam;
-//        juce::AudioParameterFloat& midHighXoverParam;
-//        float lastLowMidFreq;
-//        float lastMidHighFreq;
-//        juce::Rectangle<int> getAnalysisArea(juce::Rectangle<int> bounds) const;
-//    };
-//} // namespace MBRP_GUI
-
 //==============================================================================
 class MBRPAudioProcessorEditor : public juce::AudioProcessorEditor,
-    public juce::Timer
+    public juce::Timer // Таймер может быть не нужен здесь, если нет активной анимации в редакторе
 {
 public:
     explicit MBRPAudioProcessorEditor(MBRPAudioProcessor&);
@@ -56,7 +32,7 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
-    void timerCallback() override;
+    void timerCallback() override; // Если нужен
 
 private:
     LookAndFeel lnf;
@@ -64,26 +40,55 @@ private:
 
     // Компоненты GUI
     ControlBar controlBar;
-    MBRP_GUI::SpectrumAnalyzer analyzer; // Используем новый анализатор
-    MBRP_GUI::AnalyzerOverlay analyzerOverlay;
-    MBRP_GUI::BandSelectControls bandSelectControls;
+    MBRP_GUI::SpectrumAnalyzer analyzer;
+    MBRP_GUI::AnalyzerOverlay analyzerOverlay; // Будет принимать 3 параметра кроссовера
+    MBRP_GUI::BandSelectControls bandSelectControls; // Будет иметь 4 кнопки
 
-    // Контролы
-    juce::Slider lowMidCrossoverSlider, midHighCrossoverSlider;
-    juce::Label lowMidCrossoverLabel, midHighCrossoverLabel;
+    // Контролы кроссоверов (теперь 3)
+    juce::Slider lowMidCrossoverSlider, midCrossoverSlider, midHighCrossoverSlider;
+    juce::Label lowMidCrossoverLabel, midCrossoverLabel, midHighCrossoverLabel;
+
+    // Контролы панорамы и Bypass
     RotarySliderWithLabels panSlider;
     juce::Label panLabel;
     PowerButton bypassButton;
+
+    // Контролы реверба
+    RotarySliderWithLabels wetSlider;
+    RotarySliderWithLabels spaceSlider;
+    RotarySliderWithLabels distanceSlider;
+    RotarySliderWithLabels delaySlider;
+    // juce::Label wetLabel, spaceLabel, distanceLabel, delayLabel; // Не используются с RotarySliderWithLabels
+
+    RotarySliderWithLabels gainSlider; 
+    juce::TextButton bandBypassButton, bandSoloButton, bandMuteButton;
+
     // Attachments
     using APVTS = juce::AudioProcessorValueTreeState;
     using SliderAttachment = APVTS::SliderAttachment;
     using ButtonAttachment = APVTS::ButtonAttachment;
-    SliderAttachment lowMidCrossoverAttachment, midHighCrossoverAttachment;
+
+    SliderAttachment lowMidCrossoverAttachment, midCrossoverAttachment, midHighCrossoverAttachment;
+    std::unique_ptr<ButtonAttachment> globalBypassAttachment; 
     std::unique_ptr<SliderAttachment> panAttachment;
-    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    std::unique_ptr<SliderAttachment> wetAttachment;
+    std::unique_ptr<SliderAttachment> spaceAttachment;
+    std::unique_ptr<SliderAttachment> distanceAttachment;
+    std::unique_ptr<SliderAttachment> delayAttachment;
+
+    std::unique_ptr<SliderAttachment> gainAttachment;
+    std::unique_ptr<ButtonAttachment> bandBypassAttachment;
+    std::unique_ptr<ButtonAttachment> bandSoloAttachment;
+    std::unique_ptr<ButtonAttachment> bandMuteAttachment;
+
     // Методы
-    void updatePanAttachment(int bandIndex);
-    void handleBandAreaClick(int bandIndex); // <-- Объявляем новый метод-обработчик
+    void updatePanAttachment(int bandIndex);     // bandIndex 0..3
+    void updateReverbAttachments(int bandIndex); // bandIndex 0..3
+    void updateBandSpecificControls(int bandIndex);
+    void handleBandAreaClick(int bandIndex);     // bandIndex 0..3
     void handleAnalyzerToggle(bool shouldBeOn);
+
+    int currentSelectedBand = 0;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MBRPAudioProcessorEditor)
 };

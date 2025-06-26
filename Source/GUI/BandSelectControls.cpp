@@ -1,84 +1,71 @@
 #include "BandSelectControls.h"
-#include "Utilities.h" 
+#include "Utilities.h" // Не используется здесь напрямую, но может быть полезен для других вещей
+#include "LookAndFeel.h" // Для ColorScheme, если кнопки используют цвета оттуда
 
 namespace MBRP_GUI
 {
-
     BandSelectControls::BandSelectControls()
     {
+        // Настройка кнопок выбора полосы
+        auto setupBandButton = [&](juce::ToggleButton& button, const juce::String& name, const juce::String& text)
+        {
+            button.setName(name);         // Внутреннее имя для отладки/автоматизации
+            button.setButtonText(text);   // Текст на кнопке
+            button.setRadioGroupId(1);    // Все кнопки в одной радио-группе
+            button.setClickingTogglesState(true);
+            button.onClick = [this, &button]() { bandButtonClicked(&button); };
+            //button.setColour(juce::Button::Textboxcolour);
+            addAndMakeVisible(button);
+        };
 
-        auto setupBandButton = [&](juce::ToggleButton& button, const juce::String& name, juce::Colour /*color*/) 
-            {
-                button.setName(name);
-                button.setButtonText(name); 
+        // Имена и тексты для 4-х полос
+        setupBandButton(lowBandButton, "LowBand", "Low");
+        setupBandButton(lowMidBandButton, "LowMidBand", "L-Mid");
+        setupBandButton(midHighBandButton, "MidHighBand", "M-High");
+        setupBandButton(highBandButton, "HighBand", "High");
 
-                button.setRadioGroupId(1); 
-                button.setClickingTogglesState(true); 
-                button.onClick = [this, &button]() { bandButtonClicked(&button); }; 
-                addAndMakeVisible(button);
-            };
-
-
-        setupBandButton(lowBandButton, "Low", juce::Colours::orange); 
-        setupBandButton(midBandButton, "Mid", juce::Colours::lightgreen);
-        setupBandButton(highBandButton, "High", juce::Colours::cyan);
-
-
+        // Устанавливаем начальное состояние (например, выбрана "Low")
         lowBandButton.setToggleState(true, juce::NotificationType::dontSendNotification);
-        activeBandButton = &lowBandButton; 
+        activeBandButton = &lowBandButton;
     }
 
     void BandSelectControls::resized()
     {
-        auto bounds = getLocalBounds().reduced(5); 
+        auto bounds = getLocalBounds().reduced(2); // Небольшой отступ по краям
         juce::FlexBox flexBox;
-        flexBox.flexDirection = juce::FlexBox::Direction::row; 
-        flexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround; 
-        flexBox.alignItems = juce::FlexBox::AlignItems::stretch; 
+        flexBox.flexDirection = juce::FlexBox::Direction::row;
+        flexBox.justifyContent = juce::FlexBox::JustifyContent::spaceAround;
+        flexBox.alignItems = juce::FlexBox::AlignItems::stretch;
 
-
-        flexBox.items.add(juce::FlexItem(lowBandButton).withFlex(1.0f));
-        flexBox.items.add(juce::FlexItem(midBandButton).withFlex(1.0f));
-        flexBox.items.add(juce::FlexItem(highBandButton).withFlex(1.0f));
-
+        // Добавляем все 4 кнопки в FlexBox
+        flexBox.items.add(juce::FlexItem(lowBandButton).withFlex(1.0f).withMargin(1));
+        flexBox.items.add(juce::FlexItem(lowMidBandButton).withFlex(1.0f).withMargin(1));
+        flexBox.items.add(juce::FlexItem(midHighBandButton).withFlex(1.0f).withMargin(1));
+        flexBox.items.add(juce::FlexItem(highBandButton).withFlex(1.0f).withMargin(1));
 
         flexBox.performLayout(bounds);
     }
 
     void BandSelectControls::paint(juce::Graphics& g)
     {
-
-        g.fillAll(juce::Colours::transparentBlack); 
+        // Обычно фон не рисуется, так как кнопки его перекрывают.
+        // Если нужен фон под кнопками (например, если между ними есть зазоры), раскомментируйте:
+        // g.fillAll(ColorScheme::getBackgroundColor().darker(0.1f)); 
+        juce::ignoreUnused(g);
     }
-
 
     void BandSelectControls::bandButtonClicked(juce::Button* button)
     {
-
         int bandIndex = -1;
-        if (button == &lowBandButton)
-        {
-            bandIndex = 0;
-            activeBandButton = &lowBandButton;
-        }
-        else if (button == &midBandButton)
-        {
-            bandIndex = 1;
-            activeBandButton = &midBandButton;
-        }
-        else if (button == &highBandButton)
-        {
-            bandIndex = 2;
-            activeBandButton = &highBandButton;
-        }
-
+        if (button == &lowBandButton) { bandIndex = 0; activeBandButton = &lowBandButton; }
+        else if (button == &lowMidBandButton) { bandIndex = 1; activeBandButton = &lowMidBandButton; }
+        else if (button == &midHighBandButton) { bandIndex = 2; activeBandButton = &midHighBandButton; }
+        else if (button == &highBandButton) { bandIndex = 3; activeBandButton = &highBandButton; }
 
         if (bandIndex != -1 && onBandSelected)
         {
             onBandSelected(bandIndex);
         }
-
-        repaint();
+        // repaint(); // LookAndFeel::drawToggleButton позаботится о перерисовке кнопки
     }
-
-} 
+}
